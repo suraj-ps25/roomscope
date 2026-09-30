@@ -1,135 +1,127 @@
-# Architecture & plan
+# Architecture
 
-Working design doc. Grows with the build. Reflects current thinking, not a finished
-system — sections marked **(open)** are decisions still to lock.
+The design and the reason behind each decision. The measured results behind these
+choices are in the commit history and `docs/benchmark_report.md`.
 
-## Goal
+## Contract first
 
-Handheld iPhone capture → dimensioned per-room plans → one stitched whole-property
-plan with correct adjacency → per-surface damage + concealed-damage flags → scope line
-items → a confidence interval on every measurement. Same output contract at three input
-tiers (photo / video / LiDAR), intervals widening honestly as sensor data thins. One
-command per capture. Everything runs locally; weights fetched by script.
+Every tier produces the same `plan.json` (`schema/floorplan.schema.json`). Every
+dimension is a `measurement` `{value, ci_low, ci_high, ci_level, method}`, so "a
+confidence interval on every measurement" is enforced by the schema, and `schema.py` also
+checks `ci_low ≤ value ≤ ci_high`. `build.py` is the one place geometry becomes
+measurements, for all tiers.
 
-## Capture route — decided: Route 2 (stock app + one-page protocol)
+## Tiers share one core
 
-- **Photo tier:** native iOS Camera app, 2–8 stills per room, one folder per room.
-- **Video tier:** native iOS Camera app, one handheld walkthrough clip.
-- **LiDAR tier:** a free App Store LiDAR logging app that exports raw per-frame depth,
-  confidence, camera poses and intrinsics (app choice pending format verification).
+| Tier | What produces depth and poses | Then |
+|---|---|---|
+| LiDAR | ARKit depth + VIO poses (Stray Scanner) | shared core |
+| Video | MoGe-2 metric depth on anchor keyframes; MapAnything multi-view poses over overlapping windows, chained | shared core, video tolerances |
+| Photo | per room: MoGe-2 + MapAnything on 2–8 stills | per-room layout, then doorway stitching |
 
-Why Route 2: the pipeline carries ~85% of the score; a stock app gets real captures
-flowing immediately and gives the graders a zero-build install path. A custom app
-(Route 1) would buy control over raw data but costs iOS build time and an Apple
-Developer account for a 5% component.
+The photo and video tiers turn images into **pseudo-LiDAR frames** (metric depth, pose,
+intrinsics, confidence). Rooms, walls, openings and damage are then the same code as
+LiDAR, with noise-appropriate tolerances (`geometry/tolerances.py`,
+`DriftSettings`, `PlaneSettings`).
 
-The pipeline consumes a **normalized capture bundle** (frames, intrinsics, optional
-poses, optional depth + confidence), so the capture app is swappable behind ingest.
+**Why MoGe-2 for metric scale.** Measured on real iPad views with laser ground truth
+(ARKitScenes 47429912):
 
-Development without a device: pipeline built and validated on public real iPhone/iPad
-LiDAR data plus a synthetic capture generator with exact ground truth. Benchmark numbers
-come only from our own real captures with tape/laser ground truth.
+| Model | Scale vs truth | Per-view spread |
+|---|---|---|
+| MapAnything (images only) | 0.669 | 16.8% |
+| MoGe-2 | −0.5% | 6.9% |
+| MapAnything conditioned on MoGe-2 depth | 0.978 | 5.9% |
 
-## Tiers
+## Drift
 
-All three produce the same contract; what differs is how geometry and metric scale are
-recovered, and how wide the intervals get.
+The phone's VIO is excellent over seconds and drifts over tens of metres. Depth
+registration is the reverse: exact between two views, but chaining registrations
+random-walks. An experiment kept in the history showed that frame-to-model ICP tracking
+accumulated as much drift as VIO. So:
 
-- **LiDAR** — depth + poses + intrinsics measured. Fuse depth into a point cloud, extract
-  planes (walls/floor/ceiling), measure directly. Tightest intervals. Drives the
-  head-to-head and the metric gates.
-- **Video** — structure-from-motion / visual-inertial odometry recovers poses up to a
-  scale that IMU + known priors resolve; densify to geometry. Medium intervals.
-- **Photo** — 2–8 stills per room, no depth, no poses. SfM per room recovers geometry up
-  to an unknown metric scale; a learned metric-depth prior and/or a physical reference
-  resolves scale. Widest intervals. **This is the floor and the hardest gate.**
+1. **Pose graph** (`geometry/drift.py`) over 3-second fragments.
+   - Odometry edges carry a stated VIO budget: 1%/m + 2 mm, and 0.2°/√m heading. An
+     earlier, overconfident budget made the robust loss reject the true loop closures.
+   - Loop edges come from 4-DoF point-to-plane ICP between any fragments that overlap. A
+     closure is accepted on its absolute inlier count and RMSE, not on overlap fraction,
+     because the end of a scan and its start usually look in different directions.
+   - Information comes from the ICP Hessian, so a corridor match is weak along the
+     corridor.
+   - Solved with a Cauchy loss on a graduated scale, so a large true loop isn't thrown
+     away as an outlier.
+2. **Plane-anchored bundle adjustment** (`geometry/planes.py`).
+   - Landmarks are every room's wall, floor and ceiling planes, plus door and window
+     **jambs**. Jambs are perpendicular to their wall, so they pin the along-wall sliding
+     a wall plane can't: without them, residual hallway sliding made 3 of 9 doors 3 cm
+     narrow.
+   - Point blocks are deflated to 50 effective points, because depth error within one
+     view is correlated.
 
-### The metric-scale problem (photo/video)
+The **capture protocol** is part of the drift design. A full on-the-spot turn in each room
+sees opposite walls seconds apart, so room dimensions don't rest on long-term odometry;
+the hallway's length was 7 cm off without it. Ending at the start gives the scan-level
+loop closure.
 
-Monocular geometry is scale-free. Candidate scale sources, in preference order:
-1. Learned **metric** depth (e.g. Depth-Anything-V2-Metric / UniDepth) as a scale prior.
-2. A known physical reference placed in view (protocol can require a door leaf, a sheet
-   of A4, a tape segment) — cheap, robust, honest.
-3. A ceiling-height prior when nothing else is available — widest interval.
+## Rooms, walls, openings
 
-Scale uncertainty propagates into the confidence interval. Thin input ⇒ wide interval.
-"Confident garbage on thin input caps the total score," so the intervals must be *earned*.
+- **Rooms** (`geometry/rooms.py`). Interior comes from free-space carving: each ray
+  proves the cells it crossed are empty.
+  - Barriers are long straight wall traces in the band just below the *local* ceiling.
+    Door headers close doorways; shower rails and cabinets that stop short of the ceiling
+    don't cut rooms.
+  - Traces are extended to meet at corners.
+  - A region the camera never stood in isn't a room: this rejects mirror phantoms and
+    glimpses.
+- **Walls** (`geometry/layout.py`). A robust TLS line per wall, seeded under the ceiling
+  (above furniture). Angles are **fitted, not snapped**: snapping a 4 m wall by 0.5°
+  moves its corners 1.7 cm. Edges with little wall material under the ceiling are
+  dropped as mask artefacts, and consecutive parallel lines are merged.
+- **Openings** (`geometry/openings.py`).
+  - Per-wall ray votes (face / recess / through / no-return; rays stopped in front don't
+    vote), so "unseen" is never read as "open".
+  - Edges snap to the density mode of jamb/head reveal points, using high-confidence
+    returns only (ARKit marks edge pixels low).
+  - Doors are paired across a wall thickness (adjacency) and fused by inverse variance.
+  - **Mirror test**: reflect the see-through points across the wall and check they land
+    on the room, using only surfaces facing the wall. Floors and aligned perpendicular
+    walls are invariant under that reflection.
+- **Photo stitching** (`geometry/stitch.py`). Door pairs fix the relative pose; they are
+  verified by whether one room's through-door glimpse lands on the other room; then
+  assembled as a greedy maximum spanning tree with no door reuse and no overlap.
 
-## Pipeline stages
+## Damage
 
-`ingest → reconstruct → measure → stitch → damage → scope → render`
-(mirrored in `src/roomscope/cli.py::STAGES`.)
+`damage/`:
+- Metric orthophotos per surface at 5 mm, taking each texel from its best non-occluded
+  view.
+- Detectors run in an order that stops each one's false positives from becoming another's:
+  objects masked → mould (speck clusters) → cracks (meandering ridges) → stains
+  (hysteresis over a 1.2 m background).
+- Seven explicit concealed-damage rules cite their evidence.
+- Scope lines are keyed to surfaces.
+- Peeling paint is deliberately not reported (it's indistinguishable from lighting
+  gradients).
 
-- **ingest** — normalize any route/tier into the capture bundle; detect tier from layout.
-- **reconstruct** — per-room geometry: LiDAR depth fusion, or SfM (pycolmap/GLOMAP),
-  plus plane extraction (RANSAC on the cloud) for wall/floor/ceiling surfaces.
-- **measure** — wall lengths, ceiling height, floor area, opening detection + widths,
-  each with an interval.
-- **stitch** — place rooms into one coordinate frame via shared openings (doorways) and
-  adjacency; apply drift correction (pose graph / loop closure) on multi-room walks.
-- **damage** — per-surface segmentation into damage classes + metric extent; rule layer
-  emits concealed-damage flags naming the rule that fired.
-- **scope** — map damage regions to repair line items keyed to surfaces.
-- **render** — write `plan.json` (schema) and `plan.png`.
+## Intervals
 
-## Drift accountability
+`build.py` propagates each measurement's uncertainty:
+- wall length from the neighbouring walls' fit sigmas through the corner intersections;
+- ceiling from the floor and ceiling level fits;
+- openings from the jamb fits;
+- damage from the boundary;
+- then the tier's scale sigma: LiDAR 0.3%, video ≥ 1.5%, photo per room
+  √((6.9%/√n)² + 2%²).
 
-Multi-room walks accumulate pose drift. Plan: pose-graph optimization with loop closure
-(and/or plane-anchored correction) over the room-to-room transform graph, with an
-**ablation** (stitched footprint with correction on vs off) in the benchmark report.
-"Poses used as-is" is an automatic fail on this gate, so correction is not optional.
+Per-tier, per-quantity calibration multipliers (`calibration/<tier>.json`) are fitted on
+ground truth so the stated 90% holds, and coverage is reported per tier.
 
-## Calibration & confidence intervals
+## Known limitations
 
-Every measurement carries `{value, ci_low, ci_high}`. Intervals come from propagating
-the dominant uncertainty per tier (scale uncertainty, plane-fit residuals, pose
-covariance) and are **calibrated** against the benchmark ground truth: a well-calibrated
-interval contains the true value at its stated coverage. Calibration is scored at every
-tier. The report states, per gate, whether error is **repeatable-but-biased** (systematic,
-fixable by calibration) or **unrepeatable** (noise) — both fail the raw gate but demand
-different fixes.
-
-## Damage & concealed-damage rules
-
-- Damage regions: per-surface class (≥2 classes staged in the benchmark) + metric extent.
-- Concealed-damage flags fire from explicit rules (e.g. moisture staining below a window,
-  discoloration pattern consistent with hidden leak) and the output names the rule.
-- Real surfaces include mirrors, glass, wet-look floors, low light — handled with surface
-  masking / reflection rejection so they don't corrupt geometry or damage calls. **(open)**
-
-## Output schema
-
-`schema/floorplan.schema.json` is the published contract. Core shape:
-
-- `property`: tier, capture metadata, coordinate frame.
-- `rooms[]`: `walls[]`, `ceiling_height` (measurement), `floor_area` (measurement),
-  `openings[]` (type + `width` measurement), `surfaces[]`.
-- `surfaces[]`: id, kind (wall/floor/ceiling), `damage_regions[]` (class + extent
-  measurement), plus `concealed_flags[]` (rule id + description).
-- `adjacency[]`: room-to-room edges through openings (the stitch graph).
-- `scope[]`: line items keyed to a surface.
-- Every scalar dimension is a `measurement`: `{value, unit, ci_low, ci_high, method}`.
-
-(Schema file lands in the next commit.)
-
-## Benchmark set
-
-Self-built, composition fixed so it can't be flattered: one multi-room capture (3+ rooms
-+ connector), one furnished room with staged damage across two classes, the same rooms at
-all three tiers (photo tier as per-room folders), at least one room captured twice
-(repeatability), laser/tape ground truth on everything, raw sensor data submitted. A gate
-harness scores opening widths, ceiling height, repeatability, drift ablation, and the
-photo-tier whole-property stitch.
-
-## Fix loop
-
-Pick the single worst gate on our own benchmark, state the failing number, hypothesize
-root cause with evidence, predict the post-fix number, ship the fix, and submit
-regenerable before/after runs plus a readable diff.
-
-## Open decisions (to lock next)
-
-1. LiDAR logging app for Route 2 (raw depth + poses + intrinsics export, free tier).
-2. SfM backend for photo/video (pycolmap vs GLOMAP) and metric-depth model.
-3. Damage segmentation model (pretrained vs light fine-tune) and the two staged classes.
-4. Incumbent app for the head-to-head (poly.cam vs magicplan).
+- An alcove the camera never enters behind a full-height partition (a bathtub niche) is
+  left out of the room.
+- Closed doors read as wall; the protocol asks for doors to be opened.
+- Floor-to-ceiling glass leaves a gap in the wall trace, and corner completion bridges
+  only up to 1 m.
+- Damage extents read low (soft edges); only water stains, cracks and mould are reported.
+- Photo/video accuracy rests on MoGe-2's metric prior; intervals say so.
