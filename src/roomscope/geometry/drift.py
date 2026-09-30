@@ -41,6 +41,7 @@ VIO_SIGMA_FLOOR_M = 0.002
 VIO_YAW_DEG_PER_SQRT_M = 0.2
 VIO_YAW_FLOOR_DEG = 0.02
 LOOP_SIGMA_M = 0.004
+GRADUATED_SCALES = (100.0, 30.0, 10.0, 3.0)
 DEGENERATE_RATIO = 0.02
 
 
@@ -82,6 +83,7 @@ class IcpResult:
     rmse: float
     information: np.ndarray
     constrained_dims: int
+    inliers: int = 0
 
 
 def icp_4dof(points: np.ndarray, normals: np.ndarray, tree: cKDTree, target_points: np.ndarray,
@@ -145,7 +147,7 @@ def icp_4dof(points: np.ndarray, normals: np.ndarray, tree: cKDTree, target_poin
 
     # Rotation about pivot + shift, re-expressed about the origin.
     correction = Pose4(yaw, pivot - rot @ pivot + shift)
-    return IcpResult(correction, fitness, rmse, information, dims)
+    return IcpResult(correction, fitness, rmse, information, dims, int(inliers.sum()))
 
 
 @dataclass
@@ -228,11 +230,15 @@ def _solve(n_nodes: int, edges: list[Edge]) -> list[Pose4]:
             if node > 0:
                 sparsity[4 * row:4 * row + 4, 4 * (node - 1):4 * node] = 1
 
-    # Cauchy scale 3: residuals are whitened, so an edge more than ~3 sigma off starts
-    # losing influence.
-    result = least_squares(residuals, np.zeros(4 * (n_nodes - 1)), loss="cauchy", f_scale=3.0,
-                           method="trf", x_scale="jac", jac_sparsity=sparsity, max_nfev=200)
-    return unpack(result.x)
+    # Graduated robustness: starting from odometry, a true loop closure can disagree by
+    # tens of sigma (the end of a long scan vs its start), and a tight Cauchy loss would
+    # throw it away as an outlier. So solve with a wide scale first, letting large true
+    # loops pull the graph closed, then tighten so genuinely wrong edges lose influence.
+    x = np.zeros(4 * (n_nodes - 1))
+    for scale in GRADUATED_SCALES:
+        x = least_squares(residuals, x, loss="cauchy", f_scale=scale, method="trf", x_scale="jac",
+                          jac_sparsity=sparsity, max_nfev=100).x
+    return unpack(x)
 
 
 def _loop_candidates(fragments: list[Fragment]) -> list[tuple[int, int]]:
@@ -257,8 +263,15 @@ def _register(target: Fragment, source: Fragment) -> IcpResult:
     return icp_4dof(points, normals, target.tree, target.cloud.points, target.cloud.normals)
 
 
+LOOP_MIN_INLIERS = 500
+
+
 def _acceptable(result: IcpResult) -> bool:
-    return (result.fitness > 0.3 and result.rmse < 0.015 and result.constrained_dims >= 3
+    # Fitness is the overlapping fraction of the source fragment, which is small whenever
+    # two passes look in different directions (typically the end of a scan vs its start).
+    # What matters is how many correspondences agree and how well: absolute inliers,
+    # RMSE, and enough constrained directions. Wrong matches are left to the Cauchy loss.
+    return (result.inliers >= LOOP_MIN_INLIERS and result.rmse < 0.012 and result.constrained_dims >= 3
             and np.linalg.norm(result.correction.t) < 0.6 and abs(result.correction.yaw) < np.deg2rad(4))
 
 

@@ -1,0 +1,38 @@
+"""Pick the tier from what the capture folder contains."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from .stray import is_stray
+
+VIDEO_SUFFIXES = {".mp4", ".mov", ".m4v"}
+IMAGE_SUFFIXES = {".jpg", ".jpeg", ".heic", ".heif", ".png"}
+
+
+def image_files(folder: Path) -> list[Path]:
+    return sorted(p for p in folder.iterdir() if p.is_file() and p.suffix.lower() in IMAGE_SUFFIXES
+                  and not p.name.startswith("."))
+
+
+def video_files(folder: Path) -> list[Path]:
+    return sorted(p for p in folder.iterdir() if p.is_file() and p.suffix.lower() in VIDEO_SUFFIXES
+                  and not p.name.startswith("."))
+
+
+def detect_tier(path: str | Path) -> str:
+    root = Path(path)
+    if root.is_file() and root.suffix.lower() in VIDEO_SUFFIXES:
+        return "video"
+    if not root.is_dir():
+        raise ValueError(f"{root}: not a capture folder or video file")
+    if is_stray(root):
+        return "lidar"
+    rooms = [d for d in root.iterdir() if d.is_dir() and not d.name.startswith(".") and image_files(d)]
+    if rooms:
+        return "photo"
+    if video_files(root):
+        return "video"
+    if image_files(root):
+        raise ValueError(f"{root}: photos must be in one sub-folder per room (see docs/capture_protocol.md)")
+    raise ValueError(f"{root}: no Stray Scanner export, room photo folders or video found")

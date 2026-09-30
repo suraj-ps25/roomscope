@@ -28,13 +28,41 @@ TIERS = ("photo", "video", "lidar")
 
 
 def _run(args: argparse.Namespace) -> int:
-    print(f"capture: {args.capture_dir}")
-    print(f"tier:    {args.tier or 'auto (detect from capture layout)'}")
-    print(f"out:     {args.out}")
-    print("pipeline stages:", " -> ".join(STAGES))
-    print("\nnot implemented yet: pipeline is being built tier by tier "
-          "(see docs/architecture.md).", file=sys.stderr)
-    return 2
+    import json
+    import time
+    from pathlib import Path
+
+    from .io.detect import detect_tier
+    from .render import render_plan
+    from .schema import validate
+
+    started = time.perf_counter()
+    capture = Path(args.capture_dir)
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    tier = args.tier or detect_tier(capture)
+    print(f"roomscope: {capture} -> {out} ({tier} tier)")
+
+    if tier == "lidar":
+        from .io.stray import read_stray
+        from .tiers.lidar import LidarOptions, run_lidar
+        bundle = read_stray(capture, cache_dir=out / "cache")
+        result = run_lidar(bundle, LidarOptions(drift_correction=not args.no_drift_correction))
+        plan = result.plan
+    else:
+        print(f"{tier} tier is not wired into the CLI yet (see docs/architecture.md).", file=sys.stderr)
+        return 2
+
+    plan.timing_s["total"] = round(time.perf_counter() - started, 2)
+    document = plan.to_dict()
+    validate(document)
+    (out / "plan.json").write_text(json.dumps(document, indent=2))
+    render_plan(document, out / "plan.png")
+    print(f"  {len(document['rooms'])} rooms, {len(document['adjacency'])} connections, "
+          f"footprint {document['property']['footprint_area']['value']:.2f} m2 "
+          f"in {plan.timing_s['total']:.0f} s")
+    print(f"  wrote {out / 'plan.json'} and {out / 'plan.png'}")
+    return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -45,6 +73,8 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("capture_dir", help="path to a capture (photo folders, video, or LiDAR log)")
     run.add_argument("--out", required=True, help="output run directory")
     run.add_argument("--tier", choices=TIERS, help="force a tier (default: auto-detect)")
+    run.add_argument("--no-drift-correction", action="store_true",
+                     help="use capture poses as-is (ablation for the drift report)")
     run.set_defaults(func=_run)
 
     sim = sub.add_parser("sim", help="generate a synthetic capture with exact ground truth (dev tool)")
@@ -54,6 +84,7 @@ def build_parser() -> argparse.ArgumentParser:
     sim.add_argument("--seed", type=int, default=0)
     sim.add_argument("--drift", type=float, default=1.0, help="odometry drift level (lidar tier; 0 = perfect)")
     sim.add_argument("--low-light", action="store_true", help="underexposed, noisier frames")
+    sim.add_argument("--rgb-width", type=int, default=1920, help="lidar tier RGB width (4:3); smaller is faster")
     sim.set_defaults(func=_sim)
 
     return parser
@@ -76,7 +107,7 @@ def _sim(args: argparse.Namespace) -> int:
     else:
         route = default_route(load_scene(args.scene))
         writers.write_lidar_tier(args.scene, out, route, seed=args.seed, drift_level=args.drift,
-                                 exposure=exposure, noise=noise)
+                                 rgb_size=(args.rgb_width, args.rgb_width * 3 // 4), exposure=exposure, noise=noise)
     print(f"wrote {args.tier} capture to {out}")
     return 0
 
