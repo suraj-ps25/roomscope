@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Model weights / large binaries (fetched by script, never committed)
+weights/
+*.pt
+*.pth
+*.onnx
+*.ckpt
+
+# Captures, sensor logs, and generated outputs (kept out of git; tracked via data/README)
+data/captures/
+data/ground_truth/raw/
+runs/
+outputs/
+*.ply
+*.obj
+*.glb
+*.usdz
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
