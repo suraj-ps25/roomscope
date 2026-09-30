@@ -110,6 +110,7 @@ SEGMENT_MIN_POINTS = 40
 SEGMENT_GAP_M = 0.4
 SEGMENT_MIN_M = 0.3
 EXTEND_M = 1.0
+BARRIER_MIN_M = 0.5
 
 
 @dataclass
@@ -182,6 +183,35 @@ def _draw_segments(segments: list[WallSegment], origin: np.ndarray, shape: tuple
     return mask
 
 
+CEILING_CELL_M = 0.25
+UNDER_CEILING_M = 0.25
+
+
+def _under_ceiling(cloud: Cloud) -> np.ndarray:
+    """Vertical-surface points in the band just below the local ceiling. Ceiling height is
+    mapped per 25 cm cell (rooms differ; bathrooms are often lower) and holes are filled
+    from the nearest observed cell. Falls back to a fixed above-door band without ceiling."""
+    vertical = np.abs(cloud.normals[:, 2]) < 0.3
+    ceiling = (cloud.normals[:, 2] < -0.9) & (cloud.points[:, 2] > 1.8)
+    if ceiling.sum() < 200:
+        return vertical & (cloud.points[:, 2] > HEADER_MIN_Z)
+    xy = cloud.points[:, :2]
+    origin = xy.min(axis=0)
+    shape = tuple(np.floor((xy.max(axis=0) - origin) / CEILING_CELL_M).astype(int) + 1)
+    cells = np.floor((xy[ceiling] - origin) / CEILING_CELL_M).astype(int)
+    total = np.zeros(shape)
+    count = np.zeros(shape)
+    np.add.at(total, (cells[:, 0], cells[:, 1]), cloud.points[ceiling, 2])
+    np.add.at(count, (cells[:, 0], cells[:, 1]), 1)
+    level = np.where(count > 0, total / np.maximum(count, 1), np.nan)
+    _, (ii, jj) = ndimage.distance_transform_edt(np.isnan(level), return_indices=True)
+    level = level[ii, jj]
+    ij = np.floor((xy - origin) / CEILING_CELL_M).astype(int)
+    local = level[ij[:, 0], ij[:, 1]]
+    z = cloud.points[:, 2]
+    return vertical & (z > local - UNDER_CEILING_M) & (z < local - 0.02) & (z > HEADER_MIN_Z - 0.1)
+
+
 def _grow_to_walls(mask: np.ndarray, walls: np.ndarray, others: np.ndarray) -> np.ndarray:
     """Geodesic growth up to GROW_LIMIT_M, never into wall cells or another kept room:
     fills the unseen strip behind a wardrobe or over a sink without leaking through gaps.
@@ -231,10 +261,13 @@ def segment_rooms(cloud: Cloud, frames, poses: dict[int, np.ndarray],
     xy = cloud.points[:, :2]
     origin = xy.min(axis=0) - 0.5
     shape = tuple((np.ceil((xy.max(axis=0) + 0.5 - origin) / CELL)).astype(int))
-    wall = (np.abs(cloud.normals[:, 2]) < 0.3) & (cloud.points[:, 2] > HEADER_MIN_Z)
-    traces = complete_corners(wall_segments(cloud.points[wall, :2], cloud.normals[wall, :2]))
-    wall_grid = (_rasterise(xy[wall], origin, shape) >= 2) | _draw_segments(traces, origin, shape)
-    wall_grid = ndimage.binary_dilation(wall_grid, structure=np.ones((3, 3)))
+    wall = _under_ceiling(cloud)
+    # Barriers are long straight wall traces that reach the ceiling. Real walls and door
+    # headers do; clutter above door height mostly doesn't (shower screens and rails,
+    # tall cabinets, pendant lamps) and would otherwise cut a room into pieces.
+    traces = complete_corners([s for s in wall_segments(cloud.points[wall, :2], cloud.normals[wall, :2])
+                               if s.end - s.start >= BARRIER_MIN_M])
+    wall_grid = ndimage.binary_dilation(_draw_segments(traces, origin, shape), structure=np.ones((3, 3)))
     free = (carve_free_space(frames, poses, origin, shape) >= 3) & ~wall_grid
     free = ndimage.binary_opening(free, structure=np.ones((3, 3)))
     labels, count = ndimage.label(free, structure=[[0, 1, 0], [1, 1, 1], [0, 1, 0]])

@@ -44,9 +44,10 @@ def _run(args: argparse.Namespace) -> int:
     print(f"roomscope: {capture} -> {out} ({tier} tier)")
 
     if tier == "lidar":
+        from .io.arkitscenes import is_arkitscenes, read_arkitscenes
         from .io.stray import read_stray
         from .tiers.lidar import LidarOptions, run_lidar
-        bundle = read_stray(capture, cache_dir=out / "cache")
+        bundle = read_arkitscenes(capture) if is_arkitscenes(capture) else read_stray(capture, cache_dir=out / "cache")
         result = run_lidar(bundle, LidarOptions(drift_correction=not args.no_drift_correction))
         plan = result.plan
     else:
@@ -77,6 +78,12 @@ def build_parser() -> argparse.ArgumentParser:
                      help="use capture poses as-is (ablation for the drift report)")
     run.set_defaults(func=_run)
 
+    ev = sub.add_parser("eval", help="score a plan.json against ground truth (gates, intervals)")
+    ev.add_argument("plan", help="plan.json from roomscope run")
+    ev.add_argument("truth", help="ground truth (.yaml or .json, see benchmark/README.md)")
+    ev.add_argument("--out", help="write the full metrics JSON here")
+    ev.set_defaults(func=_eval)
+
     sim = sub.add_parser("sim", help="generate a synthetic capture with exact ground truth (dev tool)")
     sim.add_argument("scene", help="scene spec YAML (see benchmark/sim/)")
     sim.add_argument("--tier", choices=TIERS, required=True)
@@ -88,6 +95,19 @@ def build_parser() -> argparse.ArgumentParser:
     sim.set_defaults(func=_sim)
 
     return parser
+
+
+def _eval(args: argparse.Namespace) -> int:
+    import json
+    from pathlib import Path
+
+    from .benchmark.evaluate import evaluate, load_ground_truth, summary_table
+
+    result = evaluate(json.loads(Path(args.plan).read_text()), load_ground_truth(args.truth))
+    print(summary_table(result))
+    if args.out:
+        Path(args.out).write_text(json.dumps(result, indent=2, default=float))
+    return 0
 
 
 def _sim(args: argparse.Namespace) -> int:

@@ -23,7 +23,7 @@ from ..geometry.planes import plane_adjust
 from ..geometry.rooms import align, segment_rooms
 
 KEYFRAME_FPS = 6.0
-PLANE_ROUNDS = 2
+PLANE_ROUNDS = 3
 MEASURE_VOXEL = 0.02
 
 
@@ -83,10 +83,16 @@ def run_lidar(bundle: CaptureBundle, options: LidarOptions | None = None) -> Lid
 
     drift_notes = list(drift.notes)
     if options.drift_correction:
-        for _ in range(options.plane_rounds):
-            layouts = [room_layout(region, plan_cloud) for region in regions]
-            poses, notes = plane_adjust(frames, poses, [l for l in layouts if l is not None],
-                                        {region.id: region for region in regions})
+        found = None
+        for round_index in range(options.plane_rounds):
+            layouts = {r.id: room_layout(r, plan_cloud) for r in regions}
+            layouts = {k: v for k, v in layouts.items() if v is not None}
+            if round_index > 0:
+                # From the second round on, door and window jambs join the landmarks.
+                found = [o for r in regions if r.id in layouts
+                         for o in detect_openings(layouts[r.id], r, frames, poses)[0]]
+            poses, notes = plane_adjust(frames, poses, list(layouts.values()),
+                                        {region.id: region for region in regions}, found)
             drift_notes += notes
             plan_cloud = fuse(frames, poses, voxel=MEASURE_VOXEL, stride=2, min_confidence=2)
     clock.lap("stitch")

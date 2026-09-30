@@ -34,7 +34,7 @@ EXTENT_MARGIN_M = 0.2
 
 @dataclass
 class Plane:
-    kind: str          # "wall" or "level"
+    kind: str          # "wall" (also door/window jambs) or "level"
     room: str
     angle: float       # wall: normal direction in the plan; level: unused
     offset: float      # wall: normal . xy; level: z
@@ -42,10 +42,30 @@ class Plane:
     start: np.ndarray | None = None
     end: np.ndarray | None = None
     mask_room: object = None
+    z_range: tuple[float, float] | None = None
+    margin: float = EXTENT_MARGIN_M
 
 
-def planes_from_layouts(layouts: list[RoomLayout], regions: dict) -> list[Plane]:
+JAMB_DEPTH_M = 0.30
+
+
+def planes_from_layouts(layouts: list[RoomLayout], regions: dict, openings: list | None = None) -> list[Plane]:
+    """Walls, floors and ceilings of every room, plus the jambs of detected openings.
+    Jambs are perpendicular to their wall, so they pin the along-wall sliding a wall
+    plane cannot (the weak direction of a long hallway)."""
     planes = []
+    by_room = {layout.id: layout for layout in layouts}
+    for opening in openings or []:
+        layout = by_room.get(opening.room)
+        if layout is None or opening.jambs_found < 2:
+            continue
+        line, start = layout.lines[opening.wall], layout.polygon[opening.wall]
+        behind = -line.normal * JAMB_DEPTH_M
+        for u, facing in ((opening.u0, line.direction), (opening.u1, -line.direction)):
+            face_point = start + line.direction * u
+            planes.append(Plane("wall", opening.room, float(np.arctan2(facing[1], facing[0])),
+                                float(facing @ face_point), 0.0, face_point, face_point + behind,
+                                z_range=(opening.v0 + 0.1, opening.v1 - 0.1), margin=0.01))
     for layout in layouts:
         n = len(layout.polygon)
         for k, line in enumerate(layout.lines):
@@ -68,14 +88,14 @@ def _associate(cloud: Cloud, planes: list[Plane], layouts: dict[str, RoomLayout]
             direction = np.array([normal[1], -normal[0]])
             along = (xy - plane.start) @ direction
             length = float((plane.end - plane.start) @ direction)
+            z_lo, z_hi = plane.z_range or (layout.floor_z + 0.1, layout.ceiling_z - 0.05)
             rows = (cloud.normals[:, :2] @ normal > 0.9) & (np.abs(xy @ normal - plane.offset) < tolerance) & \
-                (along > EXTENT_MARGIN_M) & (along < length - EXTENT_MARGIN_M) & \
-                (z > layout.floor_z + 0.1) & (z < layout.ceiling_z - 0.05)
+                (along > plane.margin) & (along < length - plane.margin) & (z > z_lo) & (z < z_hi)
         else:
             rows = (cloud.normals[:, 2] * plane.up > 0.9) & (np.abs(z - plane.offset) < tolerance)
             rows &= plane.mask_room.contains(xy)
         picked = np.nonzero(rows)[0]
-        if len(picked) < 20:
+        if len(picked) < (8 if plane.margin < EXTENT_MARGIN_M else 20):
             continue
         if len(picked) > POINTS_PER_BLOCK:
             picked = rng.choice(picked, POINTS_PER_BLOCK, replace=False)
@@ -90,7 +110,7 @@ def _odometry_sigmas(distance: float) -> tuple[float, float]:
 
 
 def plane_adjust(frames: list[Frame], poses: dict[int, np.ndarray], layouts: list[RoomLayout],
-                 regions: dict) -> tuple[dict[int, np.ndarray], list[str]]:
+                 regions: dict, openings: list | None = None) -> tuple[dict[int, np.ndarray], list[str]]:
     """poses and layouts in the plan frame. Returns corrected plan-frame poses."""
     groups = _fragments_of(frames, FRAGMENT_SECONDS)
     clouds, centres, mids = [], [], []
@@ -100,7 +120,7 @@ def plane_adjust(frames: list[Frame], poses: dict[int, np.ndarray], layouts: lis
         centres.append(np.mean([poses[f.index][:3, 3] for f in group], axis=0))
         mids.append(float(np.mean([f.timestamp for f in group])))
     centres = np.array(centres)
-    planes = planes_from_layouts(layouts, regions)
+    planes = planes_from_layouts(layouts, regions, openings)
     by_room = {layout.id: layout for layout in layouts}
     n_frag, n_planes = len(groups), len(planes)
     rng = np.random.default_rng(0)

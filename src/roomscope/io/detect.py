@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .arkitscenes import is_arkitscenes
 from .stray import is_stray
 
 VIDEO_SUFFIXES = {".mp4", ".mov", ".m4v"}
@@ -26,7 +27,7 @@ def detect_tier(path: str | Path) -> str:
         return "video"
     if not root.is_dir():
         raise ValueError(f"{root}: not a capture folder or video file")
-    if is_stray(root):
+    if is_stray(root) or is_arkitscenes(root):
         return "lidar"
     rooms = [d for d in root.iterdir() if d.is_dir() and not d.name.startswith(".") and image_files(d)]
     if rooms:
