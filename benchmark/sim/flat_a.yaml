@@ -1,0 +1,64 @@
+# Synthetic 3-room flat + hallway connector. Floor at z=0, metres.
+# Layout (plan view, y up):
+#
+#   bedroom | hallway | living
+#   ------- |         |
+#   bath    |         |
+#
+name: flat_a
+wall_thickness: 0.12
+
+rooms:
+  - id: hallway
+    polygon: [[0.0, 0.0], [1.2, 0.0], [1.2, 5.0], [0.0, 5.0]]
+    ceiling: 2.70
+  - id: living
+    polygon: [[1.32, 0.0], [5.52, 0.0], [5.52, 5.0], [1.32, 5.0]]
+    ceiling: 2.74
+    wall_color: [0.80, 0.84, 0.86]
+  - id: bedroom
+    polygon: [[-3.72, 1.6], [-0.12, 1.6], [-0.12, 5.0], [-3.72, 5.0]]
+    ceiling: 2.71
+    wall_color: [0.88, 0.86, 0.78]
+  - id: bathroom
+    polygon: [[-2.12, -0.92], [-0.12, -0.92], [-0.12, 1.48], [-2.12, 1.48]]
+    ceiling: 2.55
+    wall_color: [0.90, 0.92, 0.93]
+    floor_color: [0.70, 0.72, 0.74]
+
+# Wall index i runs from polygon corner i to corner i+1. offset = along-wall distance
+# from corner i to the near jamb. Interior doors are declared once; the facing wall of
+# the connected room gets its counterpart automatically.
+openings:
+  - {id: d_entry, room: hallway, wall: 0, offset: 0.15, width: 0.90, height: 2.05, type: door}
+  - {id: d_living, room: hallway, wall: 1, offset: 1.00, width: 0.90, height: 2.05, type: door, connects_to: living}
+  - {id: d_bed, room: hallway, wall: 3, offset: 0.60, width: 0.85, height: 2.05, type: door, connects_to: bedroom}
+  - {id: d_bath, room: hallway, wall: 3, offset: 3.70, width: 0.75, height: 2.00, type: door, connects_to: bathroom}
+  - {id: w_living, room: living, wall: 1, offset: 1.50, width: 1.60, height: 1.30, sill: 0.90, type: window, glass: true}
+  - {id: w_bed, room: bedroom, wall: 3, offset: 1.00, width: 1.20, height: 1.20, sill: 1.00, type: window, glass: true}
+
+furniture:
+  - {room: living, center: [3.4, 4.45], size: [2.2, 0.9, 0.8], color: [0.30, 0.34, 0.45]}
+  - {room: living, center: [3.4, 3.0], size: [1.1, 0.6, 0.45], color: [0.45, 0.33, 0.22]}
+  - {room: living, center: [1.55, 3.9], size: [0.35, 1.0, 1.9], color: [0.40, 0.30, 0.22]}
+  - {room: bedroom, center: [-1.9, 3.97], size: [1.6, 2.0, 0.55], color: [0.75, 0.75, 0.80]}
+  - {room: bedroom, center: [-2.9, 1.92], size: [1.2, 0.6, 2.0], color: [0.50, 0.38, 0.27]}
+  - {room: bathroom, center: [-0.5, -0.5], size: [0.5, 0.45, 0.85], color: [0.95, 0.95, 0.95]}
+
+# surface: wall:<i> | floor | ceiling. Walls: u = along wall from corner i, v = height.
+# Floor/ceiling: u, v = plan x, y.
+decals:
+  - {id: dmg_stain, room: bedroom, surface: "wall:3", kind: water_stain,
+     polygon_uv: [[1.30, 0.35], [1.95, 0.30], [2.05, 0.70], [1.80, 0.95], [1.35, 0.90]]}
+  - {id: dmg_crack, room: bedroom, surface: "wall:1", kind: crack, crack_width: 0.004,
+     polyline_uv: [[2.80, 2.05], [2.92, 2.18], [2.98, 2.30], [3.12, 2.41], [3.20, 2.55]]}
+  - {id: dmg_mold, room: bathroom, surface: ceiling, kind: mold,
+     polygon_uv: [[-2.10, 1.00], [-1.60, 1.00], [-1.60, 1.46], [-2.10, 1.46]]}
+  - {id: mirror_bath, room: bathroom, surface: "wall:3", kind: mirror,
+     polygon_uv: [[0.70, 1.00], [1.50, 1.00], [1.50, 1.90], [0.70, 1.90]]}
+  - {id: poster_hall, room: hallway, surface: "wall:1", kind: poster,
+     polygon_uv: [[2.6, 1.1], [3.4, 1.1], [3.4, 1.9], [2.6, 1.9]]}
+  - {id: poster_living, room: living, surface: "wall:2", kind: poster,
+     polygon_uv: [[1.2, 1.2], [2.4, 1.2], [2.4, 2.0], [1.2, 2.0]]}
+  - {id: poster_bed, room: bedroom, surface: "wall:2", kind: poster,
+     polygon_uv: [[0.8, 1.3], [1.6, 1.3], [1.6, 1.9], [0.8, 1.9]]}

@@ -1,0 +1,102 @@
+"""Write synthetic captures to disk in the same layout real captures arrive in.
+
+Photo tier: <out>/<room>/IMG_0001.JPG ... (JPEG, iPhone-style EXIF, no depth, no poses)
+Video tier: <out>/walkthrough.mp4 (H.264, no depth, no poses)
+Every tier also gets <out>/ground_truth.json (never read by the pipeline).
+"""
+
+from __future__ import annotations
+
+import json
+import subprocess
+from concurrent.futures import ProcessPoolExecutor
+from pathlib import Path
+
+import numpy as np
+from PIL import Image
+
+from .render import Camera, Renderer
+from .scene import build_mesh, ground_truth, load_scene
+from .trajectory import photo_views, walkthrough
+
+_worker_renderer: Renderer | None = None
+
+EXIF_MAKE, EXIF_MODEL, EXIF_FOCAL, EXIF_FOCAL35 = 0x010F, 0x0110, 0x920A, 0xA405
+EXIF_IFD = 0x8769
+
+
+def _init_worker(scene_path: str) -> None:
+    global _worker_renderer
+    scene = load_scene(scene_path)
+    _worker_renderer = Renderer(scene, build_mesh(scene))
+
+
+def _render_rgb(args: tuple) -> np.ndarray:
+    camera, pose, seed, exposure, noise = args
+    rng = np.random.default_rng(seed)
+    hits = _worker_renderer.trace(camera, pose)
+    return (_worker_renderer.shade(hits, exposure=exposure, rng=rng, noise_sigma=noise) * 255).astype(np.uint8)
+
+
+def render_many(scene_path: str, camera: Camera, poses: np.ndarray, seed: int = 0,
+                exposure: float = 1.0, noise: float = 0.01, workers: int = 6):
+    jobs = [(camera, pose, seed * 100003 + i, exposure, noise) for i, pose in enumerate(poses)]
+    with ProcessPoolExecutor(workers, initializer=_init_worker, initargs=(str(scene_path),)) as pool:
+        yield from pool.map(_render_rgb, jobs, chunksize=4)
+
+
+def _iphone_exif(camera: Camera, model: str) -> Image.Exif:
+    exif = Image.Exif()
+    exif[EXIF_MAKE] = "Apple"
+    exif[EXIF_MODEL] = model
+    diag = float(np.hypot(camera.width, camera.height))
+    ifd = exif.get_ifd(EXIF_IFD)
+    ifd[EXIF_FOCAL35] = int(round(camera.fx * 43.27 / diag))
+    ifd[EXIF_FOCAL] = 5.96
+    return exif
+
+
+def write_ground_truth(scene_path: str | Path, out: Path) -> None:
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "ground_truth.json").write_text(json.dumps(ground_truth(load_scene(scene_path)), indent=2))
+
+
+def write_photo_tier(scene_path: str | Path, out: Path, rooms: list[str] | None = None,
+                     size: tuple[int, int] = (2016, 1512), model: str = "iPhone 15",
+                     seed: int = 0, exposure: float = 1.0, noise: float = 0.01) -> None:
+    scene = load_scene(scene_path)
+    camera = Camera.iphone_main(*size)
+    counter = 1
+    for room_id in rooms or [r.id for r in scene.rooms]:
+        views = photo_views(scene, room_id)
+        folder = out / room_id
+        folder.mkdir(parents=True, exist_ok=True)
+        poses = np.asarray([pose for _, pose in views])
+        for rgb in render_many(str(scene_path), camera, poses, seed + counter, exposure, noise):
+            Image.fromarray(rgb).save(folder / f"IMG_{counter:04d}.JPG", quality=92,
+                                      exif=_iphone_exif(camera, model))
+            counter += 1
+    write_ground_truth(scene_path, out)
+
+
+def write_video_tier(scene_path: str | Path, out: Path, route: list[str], fps: float = 10.0,
+                     size: tuple[int, int] = (1280, 720), seed: int = 0,
+                     exposure: float = 1.0, noise: float = 0.01) -> None:
+    scene = load_scene(scene_path)
+    trajectory = walkthrough(scene, route, fps=fps, seed=seed)
+    # Video is a 16:9 crop of the 4:3 sensor at the same horizontal FOV, plus a little
+    # stabilisation crop.
+    camera = Camera.iphone_main(*size)
+    camera = Camera(camera.width, camera.height, camera.fx * 1.08, camera.fy * 1.08, camera.cx, camera.cy)
+    out.mkdir(parents=True, exist_ok=True)
+    encoder = subprocess.Popen(
+        ["ffmpeg", "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24",
+         "-s", f"{size[0]}x{size[1]}", "-r", str(fps), "-i", "-",
+         "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", str(out / "walkthrough.mp4")],
+        stdin=subprocess.PIPE)
+    for rgb in render_many(str(scene_path), camera, trajectory.poses, seed, exposure, noise):
+        encoder.stdin.write(rgb.tobytes())
+    encoder.stdin.close()
+    if encoder.wait() != 0:
+        raise RuntimeError("ffmpeg failed while encoding the synthetic walkthrough")
+    write_ground_truth(scene_path, out)
