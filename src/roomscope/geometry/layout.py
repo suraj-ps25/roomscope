@@ -204,10 +204,18 @@ def room_layout(region: RoomRegion, cloud: Cloud) -> RoomLayout | None:
         lines.append(line)
         guesses.append(mid)
 
-    # A real wall has material along most of its length just under the ceiling (above
-    # doors, windows and furniture). Edges that don't are mask artefacts: drop the worst
-    # one, re-intersect its neighbours, repeat.
+    # Clean-up, repeated until stable:
+    #  - consecutive walls can't be parallel (same or opposite facing); keep the one with
+    #    more support. This also happens after an artefact edge between them is dropped.
+    #  - a real wall has material along most of its length just under the ceiling (above
+    #    doors, windows and furniture); edges that don't are mask artefacts.
     while len(lines) > 3:
+        parallel = next((k for k in range(len(lines)) if abs(lines[k - 1].normal @ lines[k].normal) > 0.97), None)
+        if parallel is not None:
+            weaker = parallel if lines[parallel].points < lines[parallel - 1].points else parallel - 1
+            notes.append("merged two consecutive parallel wall lines")
+            lines.pop(weaker)
+            continue
         polygon = _corners(lines)
         if polygon is None:
             break
