@@ -103,19 +103,33 @@ def _associate(cloud: Cloud, planes: list[Plane], layouts: dict[str, RoomLayout]
     return blocks
 
 
-def _odometry_sigmas(distance: float) -> tuple[float, float]:
-    sigma_t = VIO_SIGMA_FLOOR_M + VIO_SIGMA_M_PER_M * distance
-    sigma_yaw = np.deg2rad(VIO_YAW_FLOOR_DEG + VIO_YAW_DEG_PER_SQRT_M * np.sqrt(distance))
+def _odometry_sigmas(distance: float, scale: float = 1.0) -> tuple[float, float]:
+    sigma_t = (VIO_SIGMA_FLOOR_M + VIO_SIGMA_M_PER_M * distance) * scale
+    sigma_yaw = np.deg2rad(VIO_YAW_FLOOR_DEG + VIO_YAW_DEG_PER_SQRT_M * np.sqrt(distance)) * scale
     return sigma_t, sigma_yaw
 
 
+@dataclass(frozen=True)
+class PlaneSettings:
+    associate_m: tuple[float, float] = ASSOCIATE_M
+    point_sigma_m: float = POINT_SIGMA_M
+    vio_scale: float = 1.0
+    min_confidence: int = 1
+
+
+LIDAR_PLANES = PlaneSettings()
+VIDEO_PLANES = PlaneSettings(associate_m=(0.15, 0.08), point_sigma_m=0.04, vio_scale=3.0)
+
+
 def plane_adjust(frames: list[Frame], poses: dict[int, np.ndarray], layouts: list[RoomLayout],
-                 regions: dict, openings: list | None = None) -> tuple[dict[int, np.ndarray], list[str]]:
+                 regions: dict, openings: list | None = None,
+                 settings: PlaneSettings = LIDAR_PLANES) -> tuple[dict[int, np.ndarray], list[str]]:
     """poses and layouts in the plan frame. Returns corrected plan-frame poses."""
     groups = _fragments_of(frames, FRAGMENT_SECONDS)
     clouds, centres, mids = [], [], []
     for group in groups:
-        clouds.append(voxelize(Cloud.concat([frame_points(f, poses[f.index], min_confidence=1, stride=2, max_depth=5.0)
+        clouds.append(voxelize(Cloud.concat([frame_points(f, poses[f.index], min_confidence=settings.min_confidence,
+                                                          stride=2, max_depth=5.0)
                                              for f in group]), 0.02))
         centres.append(np.mean([poses[f.index][:3, 3] for f in group], axis=0))
         mids.append(float(np.mean([f.timestamp for f in group])))
@@ -128,7 +142,7 @@ def plane_adjust(frames: list[Frame], poses: dict[int, np.ndarray], layouts: lis
     frag_params = np.zeros((n_frag, 4))   # yaw, tx, ty, tz about the fragment centre
     plane_params = np.array([[p.angle, p.offset] for p in planes])
 
-    for tolerance in ASSOCIATE_M:
+    for tolerance in settings.associate_m:
         # Associate in the current corrected frame.
         rows_frag, rows_plane, rows_points = [], [], []
         for f, cloud in enumerate(clouds):
@@ -143,11 +157,12 @@ def plane_adjust(frames: list[Frame], poses: dict[int, np.ndarray], layouts: lis
         point_plane = np.concatenate(rows_plane)
         points = np.concatenate(rows_points)
         block_size = np.array([len(r) for r in rows_frag for _ in range(len(r))])
-        point_weight = np.sqrt(np.minimum(1.0, PLANE_BLOCK_EFFECTIVE / block_size)) / POINT_SIGMA_M
+        point_weight = np.sqrt(np.minimum(1.0, PLANE_BLOCK_EFFECTIVE / block_size)) / settings.point_sigma_m
         is_wall = np.array([planes[k].kind == "wall" for k in point_plane])
 
         odo_pairs = [(f, f + 1) for f in range(n_frag - 1)]
-        odo_sigmas = [_odometry_sigmas(float(np.linalg.norm(centres[b] - centres[a]))) for a, b in odo_pairs]
+        odo_sigmas = [_odometry_sigmas(float(np.linalg.norm(centres[b] - centres[a])), settings.vio_scale)
+                      for a, b in odo_pairs]
 
         def unpack(x):
             frag = np.vstack([np.zeros(4), x[:4 * (n_frag - 1)].reshape(-1, 4)])

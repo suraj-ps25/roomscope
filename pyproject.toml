@@ -12,10 +12,15 @@ dependencies = [
     "jsonschema>=4.23",
     "pyyaml>=6.0",
     "pillow>=10.0",
+    "scikit-image>=0.24",
+    "pillow-heif>=0.18",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
+# Photo/video tiers also need MoGe-2 and MapAnything, installed from pinned git commits by
+# scripts/setup.sh (neither is usable from PyPI on macOS).
+models = ["torch>=2.4", "torchvision>=0.19"]
 
 [project.scripts]
 roomscope = "roomscope.cli:main"

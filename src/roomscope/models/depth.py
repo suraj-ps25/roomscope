@@ -40,7 +40,7 @@ def metric_depth(image: np.ndarray, fov_x_deg: float | None) -> MetricDepth:
     name = cache.key(MODEL_ID, image, None if fov_x_deg is None else round(float(fov_x_deg), 4), "fp32")
     hit = cache.load("moge2", name)
     if hit is not None:
-        return MetricDepth(hit["depth"], hit["mask"].astype(bool), hit.get("normal"), hit["K"])
+        return MetricDepth(hit["depth"], hit["mask"].astype(bool), None, hit["K"])
 
     import torch
     model = _load()
@@ -50,14 +50,13 @@ def metric_depth(image: np.ndarray, fov_x_deg: float | None) -> MetricDepth:
     depth = out["depth"].float().cpu().numpy()
     mask = out["mask"].cpu().numpy().astype(bool) & np.isfinite(depth) & (depth > 0)
     depth = np.where(mask, depth, 0.0).astype(np.float32)
-    normal = out["normal"].float().cpu().numpy().astype(np.float32) if "normal" in out else None
+    normal = None
     # MoGe intrinsics are normalised by image size.
     height, width = depth.shape
     K = out["intrinsics"].float().cpu().numpy().astype(np.float64)
     K[0] *= width
     K[1] *= height
-    arrays = {"depth": depth, "mask": mask, "K": K}
-    if normal is not None:
-        arrays["normal"] = normal
-    cache.store("moge2", name, arrays)
+    cache.store("moge2", name, {"depth": depth, "mask": mask, "K": K})
+    if torch_device() == "mps":
+        torch.mps.empty_cache()
     return MetricDepth(depth, mask, normal, K)

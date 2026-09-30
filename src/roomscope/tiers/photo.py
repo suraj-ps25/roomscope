@@ -106,8 +106,14 @@ def reconstruct_room(room: str, photos: list[Photo], first_index: int = 0) -> Ro
         pose = view.pose.copy()
         pose[:3, 3] *= correction
         height, width = depth.shape
-        frames.append(Frame(first_index + k, float(k), view.K, (width, height), pose, room,
-                            load_rgb=(lambda im=photo.image: im), load_depth=(lambda d=depth: d),
+        # Colour comes from the full-resolution original (cracks need the pixels); depth
+        # and geometry stay at processing resolution.
+        full_h, full_w = photo.original.shape[:2]
+        full_K = view.K.copy()
+        full_K[0] *= full_w / width
+        full_K[1] *= full_h / height
+        frames.append(Frame(first_index + k, float(k), full_K, (full_w, full_h), pose, room,
+                            load_rgb=(lambda im=photo.original: im), load_depth=(lambda d=depth: d),
                             load_confidence=(lambda c=confidence: c), depth_K=view.K, depth_size=(width, height)))
 
     raw = fuse(frames, {f.index: f.pose for f in frames}, voxel=PHOTO_VOXEL, stride=1, min_confidence=1)
@@ -135,3 +141,74 @@ def reconstruct_room(room: str, photos: list[Photo], first_index: int = 0) -> Ro
         notes.append("room layout could not be recovered from these photos")
     return RoomReconstruction(room, frames, poses, region, layout, openings or [], scale_sigma(len(photos)),
                               cloud, notes, timing)
+
+
+def run_photo(root) -> "PhotoResult":
+    from ..build import PHOTO, OpeningGeometry, RoomGeometry, build_plan
+    from ..damage.stage import analyse_room
+    from ..geometry.stitch import stitch
+    from ..io.photos import read_photo_folders
+    from .. import model
+    from pathlib import Path
+
+    start = time.perf_counter()
+    folders = read_photo_folders(root)
+    reconstructions, index = {}, 0
+    for name, photos in folders.items():
+        reconstructions[name] = reconstruct_room(name, photos, first_index=index)
+        index += len(photos)
+    timing = {"reconstruct": round(time.perf_counter() - start, 2)}
+
+    usable = {n: r for n, r in reconstructions.items() if r.layout is not None}
+    start = time.perf_counter()
+    stitched = stitch({n: (r.layout, r.openings, r.cloud) for n, r in usable.items()})
+    timing["stitch"] = round(time.perf_counter() - start, 2)
+
+    partner = {}
+    for link in stitched.links:
+        partner[(link.a.room, link.a.index)] = (link.b.room, link.b.index)
+        partner[(link.b.room, link.b.index)] = (link.a.room, link.a.index)
+
+    start = time.perf_counter()
+    geometries = []
+    for name, rec in usable.items():
+        transform = stitched.transforms[name]
+        layout = rec.layout
+        R = transform.R
+        normals = np.array([R @ line.normal for line in layout.lines])
+        offsets = np.array([line.offset + (R @ line.normal) @ transform.t for line in layout.lines])
+        sigmas = np.array([np.hypot(line.sigma, 0.25 * line.spread) for line in layout.lines])
+        neighbours = {}
+        converted = []
+        for k, o in enumerate(rec.openings):
+            other = partner.get((name, k))
+            if other:
+                neighbours.setdefault(o.wall, []).append(other[0])
+            converted.append(OpeningGeometry(o.wall, o.kind, o.u0, o.u1, o.v0, o.v1, o.sigma_u0, o.sigma_u1,
+                                             o.sigma_v0, o.sigma_v1, o.confidence, other[0] if other else None, other))
+        damage = analyse_room(layout, rec.openings, [], rec.frames, rec.poses, name, neighbours)
+        for key in ("floor", "ceiling"):
+            for det in damage.detections.get(key, []):
+                det.polygon_uv = transform.apply(det.polygon_uv)
+        geometries.append(RoomGeometry(name, transform.apply(layout.polygon), normals, offsets, sigmas,
+                                       layout.floor_z, layout.ceiling_z, layout.floor_sigma, layout.ceiling_sigma,
+                                       converted, notes=rec.notes + layout.notes, damage=damage, label=name,
+                                       scale_sigma=rec.scale_sigma))
+    timing["damage"] = round(time.perf_counter() - start, 2)
+
+    failed = [n for n, r in reconstructions.items() if r.layout is None]
+    drift = model.DriftReport(
+        "photo tier: rooms reconstructed independently (no trajectory to drift); placed by verified doorways",
+        False, notes=stitched.notes)
+    plan = build_plan(Path(root).name, PHOTO, geometries, drift, source_app="Camera (photos)",
+                      frames_used=index, capture_notes=([f"no layout recovered for: {', '.join(failed)}"] if failed else [])
+                      + stitched.notes)
+    plan.timing_s = timing
+    return PhotoResult(plan, reconstructions, stitched)
+
+
+@dataclass
+class PhotoResult:
+    plan: object
+    reconstructions: dict
+    stitched: object

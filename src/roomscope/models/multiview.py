@@ -37,10 +37,12 @@ def _load():
 
 
 def reconstruct(images: list[np.ndarray], intrinsics: list[np.ndarray],
-                depths: list[np.ndarray] | None = None) -> list[ViewPrediction]:
-    """All images at the same (W, H), multiples of 14."""
+                depths: list[np.ndarray | None] | None = None) -> list[ViewPrediction]:
+    """All images at the same (W, H), multiples of 14. depths may hold None for views
+    reconstructed from the image alone (MapAnything accepts mixed inputs per view)."""
     height, width = images[0].shape[:2]
-    name = cache.key(MODEL_ID, width, height, *images, *intrinsics, *(depths or []), "bf16", "mask_edges")
+    name = cache.key(MODEL_ID, width, height, *images, *intrinsics,
+                     *[d if d is not None else "none" for d in (depths or [])], "bf16", "mask_edges")
     hit = cache.load("mapanything", name)
     if hit is not None:
         return [ViewPrediction(hit["depth"][i], hit["mask"][i].astype(bool), hit["conf"][i], hit["K"][i], hit["pose"][i])
@@ -53,7 +55,7 @@ def reconstruct(images: list[np.ndarray], intrinsics: list[np.ndarray],
     views = []
     for k, (image, K) in enumerate(zip(images, intrinsics)):
         view = {"img": torch.from_numpy(image), "intrinsics": torch.from_numpy(K.astype(np.float32))}
-        if depths is not None:
+        if depths is not None and depths[k] is not None:
             view["depth_z"] = torch.from_numpy(depths[k].astype(np.float32))
             view["is_metric_scale"] = torch.tensor([True])
         views.append(view)
@@ -69,4 +71,6 @@ def reconstruct(images: list[np.ndarray], intrinsics: list[np.ndarray],
         "depth": np.stack([v.depth for v in out]), "mask": np.stack([v.mask for v in out]),
         "conf": np.stack([v.confidence for v in out]), "K": np.stack([v.K for v in out]),
         "pose": np.stack([v.pose for v in out])})
+    if torch_device() == "mps":
+        torch.mps.empty_cache()
     return out

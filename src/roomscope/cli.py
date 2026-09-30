@@ -50,6 +50,12 @@ def _run(args: argparse.Namespace) -> int:
         bundle = read_arkitscenes(capture) if is_arkitscenes(capture) else read_stray(capture, cache_dir=out / "cache")
         result = run_lidar(bundle, LidarOptions(drift_correction=not args.no_drift_correction))
         plan = result.plan
+    elif tier == "photo":
+        from .tiers.photo import run_photo
+        plan = run_photo(capture).plan
+    elif tier == "video":
+        from .tiers.video import run_video
+        plan = run_video(capture, drift_correction=not args.no_drift_correction).plan
     else:
         print(f"{tier} tier is not wired into the CLI yet (see docs/architecture.md).", file=sys.stderr)
         return 2

@@ -45,6 +45,22 @@ GRADUATED_SCALES = (100.0, 30.0, 10.0, 3.0)
 DEGENERATE_RATIO = 0.02
 
 
+@dataclass(frozen=True)
+class DriftSettings:
+    """Per-tier trust. LiDAR defaults; pseudo-depth from video is centimetres noisy and
+    chained multi-view poses drift faster than ARKit VIO."""
+    vio_scale: float = 1.0
+    loop_rmse_m: float = 0.012
+    loop_sigma_m: float = LOOP_SIGMA_M
+    icp_distances: tuple[float, ...] = (0.25, 0.10, 0.04, 0.02)
+    min_confidence: int = 2
+
+
+LIDAR_DRIFT = DriftSettings()
+VIDEO_DRIFT = DriftSettings(vio_scale=3.0, loop_rmse_m=0.04, loop_sigma_m=0.015,
+                            icp_distances=(0.30, 0.15, 0.08, 0.05), min_confidence=1)
+
+
 def yaw_matrix(yaw: float) -> np.ndarray:
     return Rotation.from_euler("z", yaw).as_matrix()
 
@@ -88,7 +104,7 @@ class IcpResult:
 
 def icp_4dof(points: np.ndarray, normals: np.ndarray, tree: cKDTree, target_points: np.ndarray,
              target_normals: np.ndarray, distances: tuple[float, ...] = (0.25, 0.10, 0.04, 0.02),
-             iterations: int = 8) -> IcpResult:
+             iterations: int = 8, loop_sigma: float = LOOP_SIGMA_M) -> IcpResult:
     """Point-to-plane ICP over (yaw, x, y, z), Tukey-weighted. Updates are solved only in
     eigen-directions the geometry constrains (solution remapping), so unobservable motion
     (sliding along a bare corridor) stays at the odometry value instead of wandering.
@@ -143,7 +159,7 @@ def icp_4dof(points: np.ndarray, normals: np.ndarray, tree: cKDTree, target_poin
     information = jac_origin.T @ jac_origin
     trans_max = np.linalg.eigvalsh(information[1:, 1:]).max() if len(sel_points) else 0.0
     if trans_max > 0:
-        information *= (1.0 / LOOP_SIGMA_M ** 2) / trans_max
+        information *= (1.0 / loop_sigma ** 2) / trans_max
 
     # Rotation about pivot + shift, re-expressed about the origin.
     correction = Pose4(yaw, pivot - rot @ pivot + shift)
@@ -176,11 +192,11 @@ def _fragments_of(frames: list[Frame], seconds: float) -> list[list[Frame]]:
     return groups
 
 
-def build_fragments(frames: list[Frame], poses: dict[int, np.ndarray]) -> list[Fragment]:
+def build_fragments(frames: list[Frame], poses: dict[int, np.ndarray], min_confidence: int = 2) -> list[Fragment]:
     fragments = []
     for index, group in enumerate(_fragments_of(frames, FRAGMENT_SECONDS)):
         from .cloud import frame_points, voxelize
-        cloud = voxelize(Cloud.concat([frame_points(f, poses[f.index], min_confidence=2, stride=2,
+        cloud = voxelize(Cloud.concat([frame_points(f, poses[f.index], min_confidence=min_confidence, stride=2,
                                                     max_depth=FRAGMENT_MAX_DEPTH) for f in group]), 0.025)
         centre = np.mean([poses[f.index][:3, 3] for f in group], axis=0)
         cells = set(map(tuple, np.floor(cloud.points[:, :2] / OVERLAP_CELL).astype(int).tolist()))
@@ -189,9 +205,9 @@ def build_fragments(frames: list[Frame], poses: dict[int, np.ndarray]) -> list[F
     return fragments
 
 
-def _odometry_information(distance: float) -> np.ndarray:
-    sigma_t = VIO_SIGMA_FLOOR_M + VIO_SIGMA_M_PER_M * distance
-    sigma_yaw = np.deg2rad(VIO_YAW_FLOOR_DEG + VIO_YAW_DEG_PER_SQRT_M * np.sqrt(distance))
+def _odometry_information(distance: float, scale: float = 1.0) -> np.ndarray:
+    sigma_t = (VIO_SIGMA_FLOOR_M + VIO_SIGMA_M_PER_M * distance) * scale
+    sigma_yaw = np.deg2rad(VIO_YAW_FLOOR_DEG + VIO_YAW_DEG_PER_SQRT_M * np.sqrt(distance)) * scale
     return np.diag([1 / sigma_yaw ** 2, 1 / sigma_t ** 2, 1 / sigma_t ** 2, 1 / (0.5 * sigma_t) ** 2])
 
 
@@ -255,23 +271,24 @@ def _loop_candidates(fragments: list[Fragment]) -> list[tuple[int, int]]:
 ICP_SOURCE_POINTS = 5000
 
 
-def _register(target: Fragment, source: Fragment) -> IcpResult:
+def _register(target: Fragment, source: Fragment, settings: DriftSettings = LIDAR_DRIFT) -> IcpResult:
     points, normals = source.cloud.points, source.cloud.normals
     if len(points) > ICP_SOURCE_POINTS:
         pick = np.random.default_rng(source.index).choice(len(points), ICP_SOURCE_POINTS, replace=False)
         points, normals = points[pick], normals[pick]
-    return icp_4dof(points, normals, target.tree, target.cloud.points, target.cloud.normals)
+    return icp_4dof(points, normals, target.tree, target.cloud.points, target.cloud.normals,
+                    settings.icp_distances, loop_sigma=settings.loop_sigma_m)
 
 
 LOOP_MIN_INLIERS = 500
 
 
-def _acceptable(result: IcpResult) -> bool:
+def _acceptable(result: IcpResult, settings: DriftSettings = LIDAR_DRIFT) -> bool:
     # Fitness is the overlapping fraction of the source fragment, which is small whenever
     # two passes look in different directions (typically the end of a scan vs its start).
     # What matters is how many correspondences agree and how well: absolute inliers,
     # RMSE, and enough constrained directions. Wrong matches are left to the Cauchy loss.
-    return (result.inliers >= LOOP_MIN_INLIERS and result.rmse < 0.012 and result.constrained_dims >= 3
+    return (result.inliers >= LOOP_MIN_INLIERS and result.rmse < settings.loop_rmse_m and result.constrained_dims >= 3
             and np.linalg.norm(result.correction.t) < 0.6 and abs(result.correction.yaw) < np.deg2rad(4))
 
 
@@ -284,17 +301,18 @@ class DriftResult:
     notes: list[str]
 
 
-def optimise_pose_graph(frames: list[Frame], poses: dict[int, np.ndarray]) -> DriftResult:
-    fragments = build_fragments(frames, poses)
+def optimise_pose_graph(frames: list[Frame], poses: dict[int, np.ndarray],
+                        settings: DriftSettings = LIDAR_DRIFT) -> DriftResult:
+    fragments = build_fragments(frames, poses, settings.min_confidence)
     edges = []
     for a, b in zip(fragments[:-1], fragments[1:]):
-        info = _odometry_information(float(np.linalg.norm(b.centre - a.centre)))
+        info = _odometry_information(float(np.linalg.norm(b.centre - a.centre)), settings.vio_scale)
         edges.append(Edge(a.index, b.index, Pose4.identity(), np.linalg.cholesky(info).T, loop=False))
 
     before, loops = [], []
     for i, j in _loop_candidates(fragments):
-        result = _register(fragments[i], fragments[j])
-        if not _acceptable(result):
+        result = _register(fragments[i], fragments[j], settings)
+        if not _acceptable(result, settings):
             continue
         info = result.information + np.eye(4) * 1e-6
         edges.append(Edge(i, j, result.correction, np.linalg.cholesky(info).T, loop=True))
@@ -312,7 +330,8 @@ def optimise_pose_graph(frames: list[Frame], poses: dict[int, np.ndarray]) -> Dr
     for i, j in loops:
         moved_i = _moved(fragments[i], nodes[i])
         moved_j = _moved(fragments[j], nodes[j])
-        check = icp_4dof(moved_j.points, moved_j.normals, cKDTree(moved_i.points), moved_i.points, moved_i.normals)
+        check = icp_4dof(moved_j.points, moved_j.normals, cKDTree(moved_i.points), moved_i.points, moved_i.normals,
+                         settings.icp_distances, loop_sigma=settings.loop_sigma_m)
         after.append(float(np.linalg.norm(check.correction.t)))
 
     corrected = _interpolate(frames, poses, fragments, nodes)
@@ -338,8 +357,8 @@ def _interpolate(frames: list[Frame], poses: dict[int, np.ndarray], fragments: l
     return corrected
 
 
-def correct_drift(frames: list[Frame], enabled: bool = True) -> DriftResult:
+def correct_drift(frames: list[Frame], enabled: bool = True, settings: DriftSettings = LIDAR_DRIFT) -> DriftResult:
     raw = {f.index: f.pose for f in frames}
     if not enabled:
         return DriftResult(raw, None, None, 0, ["drift correction disabled (ablation: poses used as-is)"])
-    return optimise_pose_graph(frames, raw)
+    return optimise_pose_graph(frames, raw, settings)

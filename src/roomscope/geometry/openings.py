@@ -205,6 +205,8 @@ def _extract(layout: RoomLayout, wall: _Wall, room_tree: cKDTree,
         if _is_mirror(through_pts[member], wall, room_tree):
             notes.append(f"wall {wall.index}: {u1 - u0:.2f} x {v1 - v0:.2f} m see-through patch is a mirror "
                          "(reflected points land on this room); not an opening")
+            # Kept (kind "mirror") so later stages can mask it: a reflection is not a stain.
+            found.append(Opening(layout.id, wall.index, "mirror", u0, u1, v0, v1, 0.02, 0.02, 0.02, 0.02, 1.0, 0))
             continue
         touches_floor = v0 - wall.floor_z < DOOR_SILL_MAX_M
         if not touches_floor:

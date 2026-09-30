@@ -56,9 +56,12 @@ class RoomGeometry:
     openings: list[OpeningGeometry] = field(default_factory=list)
     coverage: float | None = None
     notes: list[str] = field(default_factory=list)
+    damage: object = None
+    label: str | None = None
+    scale_sigma: float | None = None
 
 
-@dataclass
+@dataclass(frozen=True)
 class TierProfile:
     tier: str
     scale_sigma: float
@@ -120,7 +123,32 @@ class _Sigma:
         return Measurement.from_sigma(float(value), float(sigma), unit, self.profile.method)
 
 
-def build_room(room: RoomGeometry, sigma: _Sigma) -> model.Room:
+DAMAGE_EDGE_M = 0.0075
+
+
+def _damage_regions(room: RoomGeometry, key: str, sigma: _Sigma) -> list[model.DamageRegion]:
+    if room.damage is None:
+        return []
+    regions = []
+    for det, det_id in zip(room.damage.detections.get(key, []), room.damage.ids.get(key, [])):
+        polygon = det.polygon_uv
+        perimeter = float(np.sum(np.linalg.norm(np.roll(polygon, -1, axis=0) - polygon, axis=1)))
+        area = sigma.measurement("damage_area", det.area_m2, perimeter * DAMAGE_EDGE_M, "m2", scale_power=2)
+        length = None if det.length_m is None else sigma.measurement("damage_length", det.length_m, 2 * DAMAGE_EDGE_M)
+        regions.append(model.DamageRegion(f"{room.id}/{det_id}", det.cls, area, np.round(polygon, 4).tolist(),
+                                          length, round(det.confidence, 3)))
+    return regions
+
+
+def build_room(room: RoomGeometry, sigma: _Sigma) -> tuple[model.Room, list[model.ScopeItem]]:
+    from dataclasses import replace
+
+    from .damage.scope import scope_for_surface
+
+    if room.scale_sigma is not None:
+        # Photo rooms carry their own scale uncertainty (it depends on how many photos).
+        sigma = _Sigma(replace(sigma.profile, scale_sigma=room.scale_sigma), sigma.multipliers)
+
     polygon = room.polygon
     lengths = _lengths(polygon)
     walls = []
@@ -151,12 +179,26 @@ def build_room(room: RoomGeometry, sigma: _Sigma) -> model.Room:
         net = max(gross - opening_area[k], 0.0)
         rel = np.hypot(wall.length.half_width / max(wall.length.value, 1e-9), ceiling.half_width / max(height, 1e-9))
         surfaces.append(model.Surface(f"{room.id}/w{k}", "wall", Measurement.from_bounds(
-            net, net * (1 - rel), net * (1 + rel), "m2", sigma.profile.method, wall.length.ci_level), wall.id))
-    surfaces.append(model.Surface(f"{room.id}/floor", "floor", floor_area))
-    surfaces.append(model.Surface(f"{room.id}/ceiling", "ceiling", floor_area))
+            net, net * (1 - rel), net * (1 + rel), "m2", sigma.profile.method, wall.length.ci_level), wall.id,
+            _damage_regions(room, f"w{k}", sigma)))
+    surfaces.append(model.Surface(f"{room.id}/floor", "floor", floor_area, None, _damage_regions(room, "floor", sigma)))
+    surfaces.append(model.Surface(f"{room.id}/ceiling", "ceiling", floor_area, None,
+                                  _damage_regions(room, "ceiling", sigma)))
 
-    return model.Room(room.id, polygon.round(4).tolist(), ceiling, floor_area, walls, openings, surfaces,
-                      perimeter=perimeter, label=room.id, coverage=room.coverage, notes=room.notes)
+    flags = []
+    for index, flag in enumerate(room.damage.flags if room.damage is not None else []):
+        flags.append(model.ConcealedFlag(f"{room.id}/f{index}", flag.rule_id, flag.rule, f"{room.id}/{flag.surface_key}",
+                                         [f"{room.id}/{e}" for e in flag.evidence], flag.suspected, flag.severity))
+    scope = []
+    for surface in surfaces:
+        surface_flags = [f for f in flags if f.surface_id == surface.id]
+        for line in scope_for_surface(surface.id, surface.kind, surface.area, surface.damage_regions, surface_flags):
+            scope.append(model.ScopeItem(f"{room.id}/s{len(scope)}", line.surface_id, line.code, line.description,
+                                         line.quantity, line.reason, line.count))
+
+    built = model.Room(room.id, polygon.round(4).tolist(), ceiling, floor_area, walls, openings, surfaces, flags,
+                       perimeter=perimeter, label=room.label or room.id, coverage=room.coverage, notes=room.notes)
+    return built, scope
 
 
 def build_plan(capture_id: str, profile: TierProfile, rooms: list[RoomGeometry], drift: model.DriftReport,
@@ -164,7 +206,9 @@ def build_plan(capture_id: str, profile: TierProfile, rooms: list[RoomGeometry],
                capture_notes: list[str] | None = None) -> model.Plan:
     multipliers, table_id = load_calibration(profile.tier)
     sigma = _Sigma(profile, multipliers)
-    built = [build_room(room, sigma) for room in rooms]
+    results = [build_room(room, sigma) for room in rooms]
+    built = [room for room, _ in results]
+    scope = [item for _, items in results for item in items]
 
     adjacency = []
     seen = set()
@@ -188,5 +232,5 @@ def build_plan(capture_id: str, profile: TierProfile, rooms: list[RoomGeometry],
     extent_y = sigma.measurement("extent", float(extent[1]), 0.01)
     method = "split-conformal per tier and quantity" if multipliers else "propagated (uncalibrated)"
     return model.Plan(capture_id, profile.tier, built, adjacency, footprint, drift, method,
-                      calibration_table=table_id, extent_x=extent_x, extent_y=extent_y, source_app=source_app,
-                      frames_used=frames_used, capture_notes=capture_notes or [])
+                      calibration_table=table_id, extent_x=extent_x, extent_y=extent_y, scope=scope,
+                      source_app=source_app, frames_used=frames_used, capture_notes=capture_notes or [])
