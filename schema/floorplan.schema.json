@@ -1,0 +1,219 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/suraj-ps25/roomscope/schema/floorplan.schema.json",
+  "title": "roomscope plan",
+  "description": "Output of one roomscope run on one capture. Lengths in metres, areas in square metres. Plan frame: z up, floor at z=0, x/y in the floor plane.",
+  "type": "object",
+  "required": ["schema_version", "capture", "rooms", "adjacency", "property", "scope", "drift", "calibration"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": "1.0"},
+
+    "capture": {
+      "type": "object",
+      "required": ["id", "tier"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string"},
+        "tier": {"enum": ["photo", "video", "lidar"]},
+        "source_app": {"type": ["string", "null"]},
+        "device": {"type": ["string", "null"]},
+        "frames_used": {"type": "integer", "minimum": 0},
+        "notes": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+
+    "rooms": {"type": "array", "items": {"$ref": "#/$defs/room"}},
+
+    "adjacency": {
+      "description": "Stitch graph: room-to-room connections through openings.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["from", "to", "via"],
+        "additionalProperties": false,
+        "properties": {
+          "from": {"type": "string"},
+          "to": {"type": "string"},
+          "via": {"type": "array", "items": {"type": "string"}, "description": "Opening ids on each side."},
+          "confidence": {"$ref": "#/$defs/unit_interval"}
+        }
+      }
+    },
+
+    "property": {
+      "type": "object",
+      "required": ["room_count", "footprint_area"],
+      "additionalProperties": false,
+      "properties": {
+        "room_count": {"type": "integer", "minimum": 0},
+        "footprint_area": {"$ref": "#/$defs/measurement"},
+        "extent_x": {"$ref": "#/$defs/measurement"},
+        "extent_y": {"$ref": "#/$defs/measurement"}
+      }
+    },
+
+    "scope": {"type": "array", "items": {"$ref": "#/$defs/scope_item"}},
+
+    "drift": {
+      "description": "What was done about accumulated pose drift, and its measured effect.",
+      "type": "object",
+      "required": ["method", "enabled"],
+      "additionalProperties": false,
+      "properties": {
+        "method": {"type": "string"},
+        "enabled": {"type": "boolean"},
+        "residual_before_m": {"type": ["number", "null"]},
+        "residual_after_m": {"type": ["number", "null"]},
+        "notes": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+
+    "calibration": {
+      "type": "object",
+      "required": ["ci_level", "method"],
+      "additionalProperties": false,
+      "properties": {
+        "ci_level": {"$ref": "#/$defs/unit_interval"},
+        "method": {"type": "string"},
+        "table": {"type": ["string", "null"], "description": "Calibration table id/version applied."}
+      }
+    },
+
+    "timing_s": {"type": "object", "additionalProperties": {"type": "number", "minimum": 0}}
+  },
+
+  "$defs": {
+    "unit_interval": {"type": "number", "minimum": 0, "maximum": 1},
+
+    "point2": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2},
+
+    "measurement": {
+      "description": "A dimension with its confidence interval. ci_low <= value <= ci_high at coverage ci_level.",
+      "type": "object",
+      "required": ["value", "unit", "ci_low", "ci_high", "ci_level", "method"],
+      "additionalProperties": false,
+      "properties": {
+        "value": {"type": "number"},
+        "unit": {"enum": ["m", "m2"]},
+        "ci_low": {"type": "number"},
+        "ci_high": {"type": "number"},
+        "ci_level": {"$ref": "#/$defs/unit_interval"},
+        "method": {"type": "string"}
+      }
+    },
+
+    "wall": {
+      "type": "object",
+      "required": ["id", "start", "end", "length"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string"},
+        "start": {"$ref": "#/$defs/point2"},
+        "end": {"$ref": "#/$defs/point2"},
+        "length": {"$ref": "#/$defs/measurement"}
+      }
+    },
+
+    "opening": {
+      "type": "object",
+      "required": ["id", "type", "wall_id", "offset", "width", "height"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string"},
+        "type": {"enum": ["door", "window", "opening"]},
+        "wall_id": {"type": "string"},
+        "offset": {"$ref": "#/$defs/measurement", "description": "Along-wall distance from wall start to the near jamb."},
+        "width": {"$ref": "#/$defs/measurement"},
+        "height": {"$ref": "#/$defs/measurement"},
+        "sill_height": {"oneOf": [{"$ref": "#/$defs/measurement"}, {"type": "null"}]},
+        "connects_to": {"type": ["string", "null"]},
+        "detection_confidence": {"$ref": "#/$defs/unit_interval"}
+      }
+    },
+
+    "damage_region": {
+      "description": "Damage on one surface. Surface coords (u,v): walls u=along wall from start, v=height above floor; floor/ceiling u,v = plan x,y.",
+      "type": "object",
+      "required": ["id", "class", "area", "polygon_uv"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string"},
+        "class": {"enum": ["water_stain", "crack", "mold", "peeling_paint", "hole"]},
+        "area": {"$ref": "#/$defs/measurement"},
+        "length": {"oneOf": [{"$ref": "#/$defs/measurement"}, {"type": "null"}], "description": "Linear extent, for cracks."},
+        "polygon_uv": {"type": "array", "items": {"$ref": "#/$defs/point2"}, "minItems": 3},
+        "confidence": {"$ref": "#/$defs/unit_interval"}
+      }
+    },
+
+    "surface": {
+      "type": "object",
+      "required": ["id", "kind", "area", "damage_regions"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string"},
+        "kind": {"enum": ["wall", "floor", "ceiling"]},
+        "wall_id": {"type": ["string", "null"]},
+        "area": {"$ref": "#/$defs/measurement", "description": "Net surface area (openings removed for walls)."},
+        "damage_regions": {"type": "array", "items": {"$ref": "#/$defs/damage_region"}}
+      }
+    },
+
+    "concealed_flag": {
+      "type": "object",
+      "required": ["id", "rule_id", "rule", "surface_id", "evidence", "suspected"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string"},
+        "rule_id": {"type": "string"},
+        "rule": {"type": "string", "description": "Human-readable statement of the rule that fired."},
+        "surface_id": {"type": "string"},
+        "evidence": {"type": "array", "items": {"type": "string"}, "description": "Damage-region / opening ids that triggered the rule."},
+        "suspected": {"type": "string"},
+        "severity": {"enum": ["low", "medium", "high"]}
+      }
+    },
+
+    "room": {
+      "type": "object",
+      "required": ["id", "polygon", "ceiling_height", "floor_area", "walls", "openings", "surfaces", "concealed_flags"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string"},
+        "label": {"type": ["string", "null"]},
+        "polygon": {"type": "array", "items": {"$ref": "#/$defs/point2"}, "minItems": 3, "description": "Footprint in the plan frame, counter-clockwise."},
+        "ceiling_height": {"$ref": "#/$defs/measurement"},
+        "floor_area": {"$ref": "#/$defs/measurement"},
+        "perimeter": {"$ref": "#/$defs/measurement"},
+        "walls": {"type": "array", "items": {"$ref": "#/$defs/wall"}},
+        "openings": {"type": "array", "items": {"$ref": "#/$defs/opening"}},
+        "surfaces": {"type": "array", "items": {"$ref": "#/$defs/surface"}},
+        "concealed_flags": {"type": "array", "items": {"$ref": "#/$defs/concealed_flag"}},
+        "quality": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "coverage": {"$ref": "#/$defs/unit_interval"},
+            "notes": {"type": "array", "items": {"type": "string"}}
+          }
+        }
+      }
+    },
+
+    "scope_item": {
+      "type": "object",
+      "required": ["id", "surface_id", "code", "description", "quantity", "reason"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string"},
+        "surface_id": {"type": "string"},
+        "code": {"type": "string"},
+        "description": {"type": "string"},
+        "quantity": {"$ref": "#/$defs/measurement"},
+        "count": {"type": ["integer", "null"]},
+        "reason": {"type": "array", "items": {"type": "string"}, "description": "Damage-region / flag ids justifying the item."}
+      }
+    }
+  }
+}

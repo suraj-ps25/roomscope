@@ -3,7 +3,19 @@ name = "roomscope"
 version = "0.0.1"
 description = "Multi-tier iPhone capture to dimensioned, stitched floor plans with per-surface damage detection and scope."
 requires-python = ">=3.10"
-dependencies = []
+dependencies = [
+    "numpy>=2.0",
+    "scipy>=1.13",
+    "opencv-python-headless>=4.10",
+    "open3d>=0.19",
+    "matplotlib>=3.9",
+    "jsonschema>=4.23",
+    "pyyaml>=6.0",
+    "pillow>=10.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
 
 [project.scripts]
 roomscope = "roomscope.cli:main"
