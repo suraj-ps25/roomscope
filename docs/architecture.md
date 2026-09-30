@@ -11,17 +11,24 @@ items → a confidence interval on every measurement. Same output contract at th
 tiers (photo / video / LiDAR), intervals widening honestly as sensor data thins. One
 command per capture. Everything runs locally; weights fetched by script.
 
-## Capture routes (open — pick one)
+## Capture route — decided: Route 2 (stock app + one-page protocol)
 
-- **Route 1 — custom iOS app.** ARKit/RoomPlan/raw LiDAR + camera + IMU, shipped as a
-  TestFlight/dev build. Best control of raw data and best capture-route score; needs a
-  Mac + Xcode + Apple Developer account.
-- **Route 2 — stock app + one-page protocol.** e.g. a LiDAR logging app (Record3D / 3D
-  Scanner App) for depth+poses+intrinsics, native camera for photo/video tiers. Fastest
-  to end-to-end; a non-engineer follows the page literally at the defense.
+- **Photo tier:** native iOS Camera app, 2–8 stills per room, one folder per room.
+- **Video tier:** native iOS Camera app, one handheld walkthrough clip.
+- **LiDAR tier:** a free App Store LiDAR logging app that exports raw per-frame depth,
+  confidence, camera poses and intrinsics (app choice pending format verification).
 
-Whichever we pick, the pipeline consumes a **normalized capture bundle** (frames,
-intrinsics, optional poses, optional depth), so the route is swappable behind ingest.
+Why Route 2: the pipeline carries ~85% of the score; a stock app gets real captures
+flowing immediately and gives the graders a zero-build install path. A custom app
+(Route 1) would buy control over raw data but costs iOS build time and an Apple
+Developer account for a 5% component.
+
+The pipeline consumes a **normalized capture bundle** (frames, intrinsics, optional
+poses, optional depth + confidence), so the capture app is swappable behind ingest.
+
+Development without a device: pipeline built and validated on public real iPhone/iPad
+LiDAR data plus a synthetic capture generator with exact ground truth. Benchmark numbers
+come only from our own real captures with tape/laser ground truth.
 
 ## Tiers
 
@@ -122,7 +129,7 @@ regenerable before/after runs plus a readable diff.
 
 ## Open decisions (to lock next)
 
-1. Capture route (1 vs 2) and, for LiDAR, which logging app / SDK surface.
+1. LiDAR logging app for Route 2 (raw depth + poses + intrinsics export, free tier).
 2. SfM backend for photo/video (pycolmap vs GLOMAP) and metric-depth model.
 3. Damage segmentation model (pretrained vs light fine-tune) and the two staged classes.
 4. Incumbent app for the head-to-head (poly.cam vs magicplan).
