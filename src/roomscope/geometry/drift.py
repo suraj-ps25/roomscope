@@ -1,71 +1,162 @@
 """Accumulated-drift correction for a continuous multi-room scan.
 
-Stage 1, heading: every short fragment measures the dominant wall direction from its own
-wall normals. Heading drift shows up as that direction slowly rotating over time; we
-estimate it per fragment and re-integrate the odometry with the heading error removed
-step by step. Rooms need not be rectangular; only fragments whose walls agree with the
-global axes within HEADING_ACCEPT_DEG vote.
+The phone's visual-inertial odometry (VIO) is excellent over a second or two and drifts
+slowly over tens of metres. Depth geometry is the opposite: registering two views of the
+same surfaces pins their relative pose to millimetres, but chaining registrations frame
+after frame random-walks just like odometry does. So each source is used for what it is
+good at:
 
-Stage 2, translation: fragments that overlap (consecutive ones, repeat passes through the
-hallway, end-of-scan vs start) are registered with point-to-plane ICP, and a 4-DoF pose
-graph (x, y, z, yaw; roll/pitch are observable from gravity) is optimised with a robust
-line process that prunes wrong loop closures.
+  - The scan is cut into short fragments (FRAGMENT_SECONDS). Inside a fragment VIO is
+    trusted as-is.
+  - Odometry edges link consecutive fragments with the VIO relative motion and a
+    covariance from a stated drift model (VIO_* constants).
+  - Loop-closure edges link any two fragments that see the same surfaces (repeat passes,
+    the end of a room loop against its start, the end of the scan against its start),
+    measured by point-to-plane ICP. Their information comes from the ICP Hessian, so a
+    corridor match is confident across the corridor and weak along it, normalised so the
+    best-constrained direction is trusted to LOOP_SIGMA_M.
+  - A 4-DoF pose graph (yaw, x, y, z; roll and pitch are observable from gravity) is
+    solved with a Cauchy loss, which down-weights a wrong loop closure instead of letting
+    it bend the plan.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import numpy as np
-import open3d as o3d
-from scipy.ndimage import gaussian_filter1d
+from scipy.optimize import least_squares
 from scipy.spatial import cKDTree
 from scipy.spatial.transform import Rotation
 
 from ..capture import Frame
 from .cloud import Cloud, fuse
 
-FRAGMENT_SECONDS = 6.0
-HEADING_ACCEPT_DEG = 6.0
+FRAGMENT_SECONDS = 3.0
+FRAGMENT_MAX_DEPTH = 3.5
 OVERLAP_CELL = 0.25
-
-
-@dataclass
-class Fragment:
-    index: int
-    frame_indices: list[int]
-    mid_time: float
-    cloud: Cloud
-    cells: set = field(default_factory=set)
-
-
-@dataclass
-class DriftResult:
-    poses: dict[int, np.ndarray]
-    heading_correction_deg: np.ndarray
-    loop_residual_before_m: float | None
-    loop_residual_after_m: float | None
-    loop_edges: int
-    notes: list[str]
+OVERLAP_MIN = 0.25
+VIO_SIGMA_M_PER_M = 0.01
+VIO_SIGMA_FLOOR_M = 0.002
+VIO_YAW_DEG_PER_SQRT_M = 0.2
+VIO_YAW_FLOOR_DEG = 0.02
+LOOP_SIGMA_M = 0.004
+DEGENERATE_RATIO = 0.02
 
 
 def yaw_matrix(yaw: float) -> np.ndarray:
     return Rotation.from_euler("z", yaw).as_matrix()
 
 
-def dominant_wall_angle(normals: np.ndarray) -> tuple[float, float]:
-    """Dominant wall direction modulo 90 deg, via the circular mean of 4*theta, and how
-    strongly the normals agree with it (1 = perfectly Manhattan)."""
-    horizontal = normals[np.abs(normals[:, 2]) < 0.2]
-    if len(horizontal) < 200:
-        return 0.0, 0.0
-    theta = np.arctan2(horizontal[:, 1], horizontal[:, 0])
-    c, s = np.cos(4 * theta).sum(), np.sin(4 * theta).sum()
-    return float(np.arctan2(s, c) / 4), float(np.hypot(c, s) / len(theta))
+@dataclass(frozen=True)
+class Pose4:
+    """World-frame 4-DoF transform: x -> Rz(yaw) x + t."""
+    yaw: float
+    t: np.ndarray
+
+    @classmethod
+    def identity(cls) -> Pose4:
+        return cls(0.0, np.zeros(3))
+
+    def compose(self, other: Pose4) -> Pose4:
+        return Pose4(self.yaw + other.yaw, yaw_matrix(self.yaw) @ other.t + self.t)
+
+    def inverse(self) -> Pose4:
+        return Pose4(-self.yaw, -(yaw_matrix(-self.yaw) @ self.t))
+
+    def matrix(self) -> np.ndarray:
+        out = np.eye(4)
+        out[:3, :3] = yaw_matrix(self.yaw)
+        out[:3, 3] = self.t
+        return out
 
 
-def _wrap_quarter(angle: float) -> float:
-    return (angle + np.pi / 4) % (np.pi / 2) - np.pi / 4
+def _wrap(angle: float) -> float:
+    return (angle + np.pi) % (2 * np.pi) - np.pi
+
+
+@dataclass
+class IcpResult:
+    correction: Pose4
+    fitness: float
+    rmse: float
+    information: np.ndarray
+    constrained_dims: int
+
+
+def icp_4dof(points: np.ndarray, normals: np.ndarray, tree: cKDTree, target_points: np.ndarray,
+             target_normals: np.ndarray, distances: tuple[float, ...] = (0.25, 0.10, 0.04, 0.02),
+             iterations: int = 8) -> IcpResult:
+    """Point-to-plane ICP over (yaw, x, y, z), Tukey-weighted. Updates are solved only in
+    eigen-directions the geometry constrains (solution remapping), so unobservable motion
+    (sliding along a bare corridor) stays at the odometry value instead of wandering.
+
+    Returns the correction (world frame, about the origin) and its 4x4 information matrix
+    in (yaw, x, y, z) about the origin, from the final weighted correspondences."""
+    pivot = points.mean(axis=0)
+    lever0 = points - pivot
+    yaw, shift = 0.0, np.zeros(3)
+    residual = weight = jac = None
+    dims = 0
+    for distance in distances:
+        for _ in range(iterations):
+            rot = yaw_matrix(yaw)
+            lever = lever0 @ rot.T
+            moved = pivot + lever + shift
+            gap, index = tree.query(moved, distance_upper_bound=distance, workers=-1)
+            ok = np.isfinite(gap)
+            if ok.sum() < 100:
+                return IcpResult(Pose4.identity(), 0.0, np.inf, np.zeros((4, 4)), 0)
+            n_target = target_normals[index[ok]]
+            compatible = np.sum((normals[ok] @ rot.T) * n_target, axis=1) > 0.7
+            sel = np.nonzero(ok)[0][compatible]
+            n_target = n_target[compatible]
+            residual = np.sum(n_target * (moved[sel] - target_points[index[sel]]), axis=1)
+            lv = lever[sel]
+            jac = np.column_stack([n_target[:, 1] * lv[:, 0] - n_target[:, 0] * lv[:, 1], n_target])
+            c = distance / 2
+            weight = np.where(np.abs(residual) < c, (1 - (residual / c) ** 2) ** 2, 0.0)
+            hessian = (jac * weight[:, None]).T @ jac
+            gradient = (jac * weight[:, None]).T @ residual
+            values, vectors = np.linalg.eigh(hessian)
+            keep = values > DEGENERATE_RATIO * max(values.max(), 1e-12)
+            dims = int(keep.sum())
+            step = -vectors[:, keep] @ ((vectors[:, keep].T @ gradient) / values[keep])
+            yaw += step[0]
+            shift += step[1:]
+            if abs(step[0]) < 1e-6 and np.linalg.norm(step[1:]) < 1e-5:
+                break
+
+    rot = yaw_matrix(yaw)
+    moved = pivot + lever0 @ rot.T + shift
+    inliers = np.abs(residual) < distances[-1]
+    rmse = float(np.sqrt(np.mean(residual[inliers] ** 2))) if inliers.any() else np.inf
+    fitness = float(inliers.sum() / len(points))
+
+    # Information about the world origin (how the pose graph parameterises yaw).
+    sel_points = moved[np.isfinite(tree.query(moved, distance_upper_bound=distances[-1], workers=-1)[0])]
+    gap, index = tree.query(sel_points, workers=-1)
+    n_target = target_normals[index]
+    jac_origin = np.column_stack([n_target[:, 1] * sel_points[:, 0] - n_target[:, 0] * sel_points[:, 1], n_target])
+    information = jac_origin.T @ jac_origin
+    trans_max = np.linalg.eigvalsh(information[1:, 1:]).max() if len(sel_points) else 0.0
+    if trans_max > 0:
+        information *= (1.0 / LOOP_SIGMA_M ** 2) / trans_max
+
+    # Rotation about pivot + shift, re-expressed about the origin.
+    correction = Pose4(yaw, pivot - rot @ pivot + shift)
+    return IcpResult(correction, fitness, rmse, information, dims)
+
+
+@dataclass
+class Fragment:
+    index: int
+    frames: list[Frame]
+    mid_time: float
+    cloud: Cloud
+    tree: cKDTree
+    centre: np.ndarray
+    cells: set
 
 
 def _fragments_of(frames: list[Frame], seconds: float) -> list[list[Frame]]:
@@ -83,297 +174,159 @@ def _fragments_of(frames: list[Frame], seconds: float) -> list[list[Frame]]:
     return groups
 
 
-def correct_heading(frames: list[Frame], poses: dict[int, np.ndarray]) -> tuple[dict[int, np.ndarray], np.ndarray, list[str]]:
-    groups = _fragments_of(frames, FRAGMENT_SECONDS)
-    angles, strengths, times = [], [], []
-    for group in groups:
-        cloud = fuse(group, poses, voxel=0.04, stride=4)
-        angle, strength = dominant_wall_angle(cloud.normals)
-        angles.append(angle)
-        strengths.append(strength)
-        times.append(np.mean([f.timestamp for f in group]))
-    angles, strengths, times = np.array(angles), np.array(strengths), np.array(times)
-
-    weights = strengths ** 2
-    reference = np.arctan2((weights * np.sin(4 * angles)).sum(), (weights * np.cos(4 * angles)).sum()) / 4
-    residual = np.array([_wrap_quarter(a - reference) for a in angles])
-    valid = (strengths > 0.35) & (np.abs(residual) < np.deg2rad(HEADING_ACCEPT_DEG))
-    notes = [f"heading: {valid.sum()}/{len(valid)} fragments voted"]
-    if valid.sum() < 2:
-        notes.append("heading: too few Manhattan-consistent fragments; heading left as-is")
-        return dict(poses), np.zeros(len(frames)), notes
-
-    # Heading error is a slow random walk: interpolate between voting fragments, smooth,
-    # and remove it step by step.
-    per_fragment = np.interp(times, times[valid], residual[valid])
-    per_fragment = gaussian_filter1d(per_fragment, sigma=0.8, mode="nearest")
-    frame_times = np.array([f.timestamp for f in frames])
-    per_frame = np.interp(frame_times, times, per_fragment)
-
-    corrected = {}
-    previous_raw = previous_new = None
-    for frame, error in zip(frames, per_frame):
-        raw = poses[frame.index]
-        fix = yaw_matrix(-error)
-        new = np.eye(4)
-        new[:3, :3] = fix @ raw[:3, :3]
-        new[:3, 3] = raw[:3, 3] if previous_raw is None else \
-            previous_new[:3, 3] + fix @ (raw[:3, 3] - previous_raw[:3, 3])
-        corrected[frame.index] = new
-        previous_raw, previous_new = raw, new
-    return corrected, np.rad2deg(per_frame), notes
-
-
-def _to_4dof(transform: np.ndarray) -> np.ndarray:
-    yaw = np.arctan2(transform[1, 0], transform[0, 0])
-    out = np.eye(4)
-    out[:3, :3] = yaw_matrix(yaw)
-    out[:3, 3] = transform[:3, 3]
-    return out
-
-
-def _register(source: Cloud, target: Cloud) -> tuple[np.ndarray, float, float, np.ndarray]:
-    src, tgt = source.to_o3d(), target.to_o3d()
-    transform = np.eye(4)
-    result = None
-    for distance in (0.15, 0.07, 0.035):
-        estimation = o3d.pipelines.registration.TransformationEstimationPointToPlane(
-            o3d.pipelines.registration.TukeyLoss(k=distance))
-        result = o3d.pipelines.registration.registration_icp(
-            src, tgt, distance, transform, estimation,
-            o3d.pipelines.registration.ICPConvergenceCriteria(max_iteration=40))
-        transform = _to_4dof(result.transformation)
-    info = o3d.pipelines.registration.get_information_matrix_from_point_clouds(src, tgt, 0.035, transform)
-    return transform, float(result.fitness), float(result.inlier_rmse), info
-
-
-def _build_fragments(frames: list[Frame], poses: dict[int, np.ndarray]) -> list[Fragment]:
+def build_fragments(frames: list[Frame], poses: dict[int, np.ndarray]) -> list[Fragment]:
     fragments = []
     for index, group in enumerate(_fragments_of(frames, FRAGMENT_SECONDS)):
-        cloud = fuse(group, poses, voxel=0.03, stride=2)
+        from .cloud import frame_points, voxelize
+        cloud = voxelize(Cloud.concat([frame_points(f, poses[f.index], min_confidence=2, stride=2,
+                                                    max_depth=FRAGMENT_MAX_DEPTH) for f in group]), 0.025)
+        centre = np.mean([poses[f.index][:3, 3] for f in group], axis=0)
         cells = set(map(tuple, np.floor(cloud.points[:, :2] / OVERLAP_CELL).astype(int).tolist()))
-        fragments.append(Fragment(index, [f.index for f in group],
-                                  float(np.mean([f.timestamp for f in group])), cloud, cells))
+        fragments.append(Fragment(index, group, float(np.mean([f.timestamp for f in group])), cloud,
+                                  cKDTree(cloud.points), centre, cells))
     return fragments
 
 
-def _loop_pairs(fragments: list[Fragment]) -> list[tuple[int, int]]:
+def _odometry_information(distance: float) -> np.ndarray:
+    sigma_t = VIO_SIGMA_FLOOR_M + VIO_SIGMA_M_PER_M * distance
+    sigma_yaw = np.deg2rad(VIO_YAW_FLOOR_DEG + VIO_YAW_DEG_PER_SQRT_M * np.sqrt(distance))
+    return np.diag([1 / sigma_yaw ** 2, 1 / sigma_t ** 2, 1 / sigma_t ** 2, 1 / (0.5 * sigma_t) ** 2])
+
+
+@dataclass
+class Edge:
+    i: int
+    j: int
+    measurement: Pose4
+    sqrt_information: np.ndarray
+    loop: bool
+
+
+def _edge_residual(ci: Pose4, cj: Pose4, edge: Edge) -> np.ndarray:
+    # Fragment j's points, moved by the measurement, coincide with fragment i's:
+    # Ci . M = Cj, so Cj^-1 . Ci . M should be the identity.
+    error = cj.inverse().compose(ci).compose(edge.measurement)
+    return edge.sqrt_information @ np.array([_wrap(error.yaw), *error.t])
+
+
+def _solve(n_nodes: int, edges: list[Edge]) -> list[Pose4]:
+    def unpack(x: np.ndarray) -> list[Pose4]:
+        nodes = [Pose4.identity()]
+        for k in range(n_nodes - 1):
+            nodes.append(Pose4(x[4 * k], x[4 * k + 1:4 * k + 4]))
+        return nodes
+
+    def residuals(x: np.ndarray) -> np.ndarray:
+        nodes = unpack(x)
+        return np.concatenate([_edge_residual(nodes[e.i], nodes[e.j], e) for e in edges])
+
+    from scipy.sparse import lil_matrix
+
+    sparsity = lil_matrix((4 * len(edges), 4 * (n_nodes - 1)), dtype=int)
+    for row, edge in enumerate(edges):
+        for node in (edge.i, edge.j):
+            if node > 0:
+                sparsity[4 * row:4 * row + 4, 4 * (node - 1):4 * node] = 1
+
+    # Cauchy scale 3: residuals are whitened, so an edge more than ~3 sigma off starts
+    # losing influence.
+    result = least_squares(residuals, np.zeros(4 * (n_nodes - 1)), loss="cauchy", f_scale=3.0,
+                           method="trf", x_scale="jac", jac_sparsity=sparsity, max_nfev=200)
+    return unpack(result.x)
+
+
+def _loop_candidates(fragments: list[Fragment]) -> list[tuple[int, int]]:
     pairs = []
     for i in range(len(fragments)):
         for j in range(i + 2, len(fragments)):
             shared = len(fragments[i].cells & fragments[j].cells)
             smaller = min(len(fragments[i].cells), len(fragments[j].cells))
-            if smaller and shared / smaller > 0.3:
+            if smaller and shared / smaller > OVERLAP_MIN:
                 pairs.append((i, j))
     return pairs
 
 
-def _apply(transform: np.ndarray, cloud: Cloud) -> Cloud:
-    return Cloud(cloud.points @ transform[:3, :3].T + transform[:3, 3], cloud.normals @ transform[:3, :3].T,
-                 cloud.frame_ids)
+ICP_SOURCE_POINTS = 5000
 
 
-def optimise_pose_graph(frames: list[Frame], poses: dict[int, np.ndarray]) -> tuple[dict[int, np.ndarray], float | None, float | None, int, list[str]]:
-    fragments = _build_fragments(frames, poses)
-    reg = o3d.pipelines.registration
-    graph = reg.PoseGraph()
-    for _ in fragments:
-        graph.nodes.append(reg.PoseGraphNode(np.eye(4)))
-
-    for i in range(len(fragments) - 1):
-        transform, fitness, rmse, info = _register(fragments[i].cloud, fragments[i + 1].cloud)
-        if fitness < 0.2 or np.linalg.norm(transform[:3, 3]) > 0.3:
-            transform, info = np.eye(4), np.eye(6) * 1e3
-        graph.edges.append(reg.PoseGraphEdge(i, i + 1, transform, info, uncertain=False))
-
-    loop_before = []
-    accepted = []
-    for i, j in _loop_pairs(fragments):
-        transform, fitness, rmse, info = _register(fragments[i].cloud, fragments[j].cloud)
-        yaw = abs(np.rad2deg(np.arctan2(transform[1, 0], transform[0, 0])))
-        if fitness > 0.3 and rmse < 0.025 and np.linalg.norm(transform[:3, 3]) < 0.8 and yaw < 4:
-            graph.edges.append(reg.PoseGraphEdge(i, j, transform, info, uncertain=True))
-            loop_before.append(float(np.linalg.norm(transform[:3, 3])))
-            accepted.append((i, j))
-
-    notes = [f"pose graph: {len(fragments)} fragments, {len(accepted)} loop closures"]
-    if not accepted:
-        notes.append("pose graph: no loop closures found; translation drift uncorrected")
-        return dict(poses), None, None, 0, notes
-
-    reg.global_optimization(
-        graph, reg.GlobalOptimizationLevenbergMarquardt(), reg.GlobalOptimizationConvergenceCriteria(),
-        reg.GlobalOptimizationOption(max_correspondence_distance=0.035, edge_prune_threshold=0.25,
-                                     preference_loop_closure=2.0, reference_node=0))
-    corrections = [_to_4dof(node.pose) for node in graph.nodes]
-
-    loop_after = []
-    for i, j in accepted:
-        src = _apply(corrections[i], fragments[i].cloud)
-        tgt = _apply(corrections[j], fragments[j].cloud)
-        transform, _, _, _ = _register(src, tgt)
-        loop_after.append(float(np.linalg.norm(transform[:3, 3])))
-
-    # Blend corrections between fragment centres so frames never jump at a boundary.
-    mids = np.array([f.mid_time for f in fragments])
-    yaws = np.unwrap([np.arctan2(c[1, 0], c[0, 0]) for c in corrections])
-    shifts = np.array([c[:3, 3] for c in corrections])
-    corrected = {}
-    for frame in frames:
-        t = frame.timestamp
-        yaw = np.interp(t, mids, yaws)
-        shift = np.array([np.interp(t, mids, shifts[:, k]) for k in range(3)])
-        fix = np.eye(4)
-        fix[:3, :3] = yaw_matrix(yaw)
-        fix[:3, 3] = shift
-        corrected[frame.index] = fix @ poses[frame.index]
-    return corrected, float(np.mean(loop_before)), float(np.mean(loop_after)), len(accepted), notes
+def _register(target: Fragment, source: Fragment) -> IcpResult:
+    points, normals = source.cloud.points, source.cloud.normals
+    if len(points) > ICP_SOURCE_POINTS:
+        pick = np.random.default_rng(source.index).choice(len(points), ICP_SOURCE_POINTS, replace=False)
+        points, normals = points[pick], normals[pick]
+    return icp_4dof(points, normals, target.tree, target.cloud.points, target.cloud.normals)
 
 
-TRACK_RADIUS = 5.0
-TRACK_VOXEL = 0.03
-TRACK_MAX_DEPTH = 3.0
-TRACK_REBUILD_EVERY = 5
-DEGENERATE_RATIO = 0.02
+def _acceptable(result: IcpResult) -> bool:
+    return (result.fitness > 0.3 and result.rmse < 0.015 and result.constrained_dims >= 3
+            and np.linalg.norm(result.correction.t) < 0.6 and abs(result.correction.yaw) < np.deg2rad(4))
 
 
 @dataclass
-class IcpResult:
-    yaw: float
-    shift: np.ndarray
-    fitness: float
-    rmse: float
-    constrained_dims: int
-
-    def matrix(self, pivot: np.ndarray) -> np.ndarray:
-        """Correction as a world transform: rotate by yaw about pivot, then shift."""
-        rot = yaw_matrix(self.yaw)
-        out = np.eye(4)
-        out[:3, :3] = rot
-        out[:3, 3] = pivot - rot @ pivot + self.shift
-        return out
+class DriftResult:
+    poses: dict[int, np.ndarray]
+    loop_residual_before_m: float | None
+    loop_residual_after_m: float | None
+    loop_edges: int
+    notes: list[str]
 
 
-def icp_4dof(points: np.ndarray, normals: np.ndarray, tree: cKDTree, model_points: np.ndarray,
-             model_normals: np.ndarray, pivot: np.ndarray,
-             distances: tuple[float, ...] = (0.08, 0.035, 0.02), iterations: int = 5) -> IcpResult:
-    """Point-to-plane ICP over (yaw, x, y, z) about `pivot`, Tukey-weighted, with
-    degeneracy-aware updates: the step is solved only in eigen-directions of the normal
-    matrix the geometry constrains (solution remapping), everything else stays put."""
-    yaw, shift = 0.0, np.zeros(3)
-    residual = np.zeros(0)
-    matched = 0
-    dims = 0
-    lever0 = points - pivot
-    for distance in distances:
-        for _ in range(iterations):
-            rot = yaw_matrix(yaw)
-            lever = lever0 @ rot.T
-            moved = pivot + lever + shift
-            gap, index = tree.query(moved, distance_upper_bound=distance, workers=-1)
-            ok = np.isfinite(gap)
-            if ok.sum() < 50:
-                return IcpResult(0.0, np.zeros(3), 0.0, np.inf, 0)
-            n_model = model_normals[index[ok]]
-            compatible = np.sum((normals[ok] @ rot.T) * n_model, axis=1) > 0.7
-            sel = np.nonzero(ok)[0][compatible]
-            n_model = n_model[compatible]
-            q = model_points[index[sel]]
-            residual = np.sum(n_model * (moved[sel] - q), axis=1)
-            lv = lever[sel]
-            jac = np.column_stack([n_model[:, 1] * lv[:, 0] - n_model[:, 0] * lv[:, 1], n_model])
-            c = distance / 2
-            weight = np.where(np.abs(residual) < c, (1 - (residual / c) ** 2) ** 2, 0.0)
-            hessian = (jac * weight[:, None]).T @ jac
-            gradient = (jac * weight[:, None]).T @ residual
-            values, vectors = np.linalg.eigh(hessian)
-            keep = values > DEGENERATE_RATIO * max(values.max(), 1e-12)
-            dims = int(keep.sum())
-            step = -vectors[:, keep] @ ((vectors[:, keep].T @ gradient) / values[keep])
-            yaw += step[0]
-            shift += step[1:]
-            matched = len(sel)
-            if abs(step[0]) < 1e-5 and np.linalg.norm(step[1:]) < 1e-4:
-                break
-    inliers = np.abs(residual) < distances[-1]
-    rmse = float(np.sqrt(np.mean(residual[inliers] ** 2))) if inliers.any() else np.inf
-    return IcpResult(float(yaw), shift, matched / len(points), rmse, dims)
+def optimise_pose_graph(frames: list[Frame], poses: dict[int, np.ndarray]) -> DriftResult:
+    fragments = build_fragments(frames, poses)
+    edges = []
+    for a, b in zip(fragments[:-1], fragments[1:]):
+        info = _odometry_information(float(np.linalg.norm(b.centre - a.centre)))
+        edges.append(Edge(a.index, b.index, Pose4.identity(), np.linalg.cholesky(info).T, loop=False))
+
+    before, loops = [], []
+    for i, j in _loop_candidates(fragments):
+        result = _register(fragments[i], fragments[j])
+        if not _acceptable(result):
+            continue
+        info = result.information + np.eye(4) * 1e-6
+        edges.append(Edge(i, j, result.correction, np.linalg.cholesky(info).T, loop=True))
+        before.append(float(np.linalg.norm(result.correction.t)))
+        loops.append((i, j))
+
+    notes = [f"pose graph: {len(fragments)} fragments of {FRAGMENT_SECONDS:.0f} s, {len(loops)} loop closures"]
+    if not loops:
+        notes.append("no loop closures found; drift left uncorrected (capture did not revisit any area)")
+        return DriftResult(dict(poses), None, None, 0, notes)
+
+    nodes = _solve(len(fragments), edges)
+
+    after = []
+    for i, j in loops:
+        moved_i = _moved(fragments[i], nodes[i])
+        moved_j = _moved(fragments[j], nodes[j])
+        check = icp_4dof(moved_j.points, moved_j.normals, cKDTree(moved_i.points), moved_i.points, moved_i.normals)
+        after.append(float(np.linalg.norm(check.correction.t)))
+
+    corrected = _interpolate(frames, poses, fragments, nodes)
+    return DriftResult(corrected, float(np.median(before)), float(np.median(after)), len(loops), notes)
 
 
-class _LocalMap:
-    """Voxelised map of everything tracked so far, with a KD-tree over the part near the
-    camera. Rebuilt every few frames; new frames are appended in between."""
-
-    def __init__(self):
-        self.points = np.zeros((0, 3))
-        self.normals = np.zeros((0, 3))
-        self.pending: list[Cloud] = []
-        self.tree: cKDTree | None = None
-        self.local_points = self.local_normals = None
-
-    def add(self, cloud: Cloud) -> None:
-        self.pending.append(cloud)
-
-    def rebuild(self, centre: np.ndarray) -> None:
-        from .cloud import voxelize
-        merged = voxelize(Cloud.concat([Cloud(self.points, self.normals, np.zeros(len(self.points), np.int32)),
-                                        *self.pending]), TRACK_VOXEL)
-        self.points, self.normals, self.pending = merged.points, merged.normals, []
-        near = np.linalg.norm(self.points - centre, axis=1) < TRACK_RADIUS
-        self.local_points, self.local_normals = self.points[near], self.normals[near]
-        self.tree = cKDTree(self.local_points) if near.sum() > 0 else None
+def _moved(fragment: Fragment, node: Pose4) -> Cloud:
+    rot = yaw_matrix(node.yaw)
+    return Cloud(fragment.cloud.points @ rot.T + node.t, fragment.cloud.normals @ rot.T, fragment.cloud.frame_ids)
 
 
-def track_frame_to_model(frames: list[Frame], poses: dict[int, np.ndarray]) -> tuple[dict[int, np.ndarray], list[str]]:
-    """Register each frame to the map built so far, seeded by the odometry step since the
-    previous frame. Revisited areas therefore snap back onto the geometry already mapped."""
-    from .cloud import frame_points
-
-    tracked: dict[int, np.ndarray] = {}
-    world = _LocalMap()
-    accepted = 0
-    previous = None
-    for count, frame in enumerate(frames):
-        odom = poses[frame.index]
-        guess = odom if previous is None else tracked[previous[0]] @ np.linalg.inv(previous[1]) @ odom
-        pose = guess
-        if count and count % TRACK_REBUILD_EVERY == 1:
-            world.rebuild(guess[:3, 3])
-        # Close-range returns only: iPhone LiDAR is accurate to ~1 cm within 2-3 m and
-        # degrades quickly beyond.
-        local = frame_points(frame, np.eye(4), min_confidence=2, stride=4, max_depth=TRACK_MAX_DEPTH)
-        if world.tree is not None and len(world.local_points) > 2000 and len(local) > 300:
-            source = _apply(guess, local)
-            result = icp_4dof(source.points, source.normals, world.tree, world.local_points,
-                              world.local_normals, guess[:3, 3])
-            if (result.fitness > 0.35 and result.rmse < 0.012 and np.linalg.norm(result.shift) < 0.08
-                    and abs(result.yaw) < np.deg2rad(1.5)):
-                pose = result.matrix(guess[:3, 3]) @ guess
-                accepted += 1
-        tracked[frame.index] = pose
-        previous = (frame.index, odom)
-        world.add(_apply(pose, local))
-        if count == 0:
-            world.rebuild(pose[:3, 3])
-    return tracked, [f"frame-to-model tracking: {accepted}/{len(frames) - 1} frames refined"]
+def _interpolate(frames: list[Frame], poses: dict[int, np.ndarray], fragments: list[Fragment],
+                 nodes: list[Pose4]) -> dict[int, np.ndarray]:
+    """Blend node corrections between fragment mid-times so no frame jumps at a boundary."""
+    mids = np.array([f.mid_time for f in fragments])
+    yaws = np.unwrap([n.yaw for n in nodes])
+    shifts = np.array([n.t for n in nodes])
+    corrected = {}
+    for frame in frames:
+        t = frame.timestamp
+        node = Pose4(float(np.interp(t, mids, yaws)), np.array([np.interp(t, mids, shifts[:, k]) for k in range(3)]))
+        corrected[frame.index] = node.matrix() @ poses[frame.index]
+    return corrected
 
 
-def correct_drift(frames: list[Frame], enabled: bool = True, heading: bool = True,
-                  tracking: bool = True, pose_graph: bool = True) -> DriftResult:
+def correct_drift(frames: list[Frame], enabled: bool = True) -> DriftResult:
     raw = {f.index: f.pose for f in frames}
     if not enabled:
-        return DriftResult(raw, np.zeros(len(frames)), None, None, 0, ["drift correction disabled (ablation)"])
-    notes: list[str] = []
-    poses, heading_deg = raw, np.zeros(len(frames))
-    if heading:
-        poses, heading_deg, heading_notes = correct_heading(frames, poses)
-        notes += heading_notes
-    if tracking:
-        poses, track_notes = track_frame_to_model(frames, poses)
-        notes += track_notes
-    before = after = None
-    loops = 0
-    if pose_graph:
-        poses, before, after, loops, graph_notes = optimise_pose_graph(frames, poses)
-        notes += graph_notes
-    return DriftResult(poses, heading_deg, before, after, loops, notes)
+        return DriftResult(raw, None, None, 0, ["drift correction disabled (ablation: poses used as-is)"])
+    return optimise_pose_graph(frames, raw)
