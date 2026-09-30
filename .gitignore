@@ -32,3 +32,7 @@ outputs/
 .DS_Store
 .idea/
 .vscode/
+
+# Vendored model code (fetched by scripts/setup.sh at a pinned commit)
+third_party/
+data/public/

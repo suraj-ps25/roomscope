@@ -17,12 +17,11 @@ from scipy import ndimage
 
 from .cloud import Cloud
 from .rooms import RoomRegion, robust_level
+from .tolerances import LIDAR_TOL, Tolerances
 
 AXIS_SNAP_DEG = 12.0
 MIN_EDGE_M = 0.25
-SEARCH_M = 0.30
 CORNER_MARGIN_M = 0.15
-INLIER_M = 0.03
 UPPER_BAND_M = 0.6
 EFFECTIVE_POINTS_CAP = 400
 
@@ -137,7 +136,7 @@ def _tukey_line(points: np.ndarray, normal: np.ndarray, offset: float, iteration
 
 
 def fit_wall(points: Cloud, inward: np.ndarray, anchor: np.ndarray, span: tuple[float, float],
-             floor_z: float, ceiling_z: float) -> WallLine | None:
+             floor_z: float, ceiling_z: float, tol: Tolerances = LIDAR_TOL) -> WallLine | None:
     """Fit the wall whose interior face passes near `anchor` with inward normal `inward`,
     using only points on that face between span (along-wall coordinates)."""
     direction = np.array([inward[1], -inward[0]])
@@ -146,14 +145,14 @@ def fit_wall(points: Cloud, inward: np.ndarray, anchor: np.ndarray, span: tuple[
     along = rel @ direction
     z = points.points[:, 2]
     facing = (points.normals[:, :2] @ inward > 0.8) & (np.abs(points.normals[:, 2]) < 0.3)
-    base = facing & (np.abs(across) < SEARCH_M) & (along > span[0] + CORNER_MARGIN_M) & \
+    base = facing & (np.abs(across) < tol.wall_search_m) & (along > span[0] + CORNER_MARGIN_M) & \
         (along < span[1] - CORNER_MARGIN_M) & (z > floor_z + 0.15) & (z < ceiling_z - 0.05)
     upper = base & (z > ceiling_z - UPPER_BAND_M)
     seed_rows = upper if upper.sum() >= 30 else base
     if seed_rows.sum() < 30:
         return None
-    seed = robust_level(across[seed_rows], window=INLIER_M)
-    rows = base & (np.abs(across - seed) < INLIER_M)
+    seed = robust_level(across[seed_rows], window=tol.wall_inlier_m)
+    rows = base & (np.abs(across - seed) < tol.wall_inlier_m)
     if rows.sum() < 30:
         return None
     xy = points.points[rows, :2]
@@ -172,9 +171,9 @@ def _level(values: np.ndarray) -> tuple[float, float]:
     return level, float(spread / np.sqrt(min(len(near), EFFECTIVE_POINTS_CAP)) if len(near) else 0.02)
 
 
-def room_layout(region: RoomRegion, cloud: Cloud) -> RoomLayout | None:
+def room_layout(region: RoomRegion, cloud: Cloud, tol: Tolerances = LIDAR_TOL) -> RoomLayout | None:
     notes: list[str] = []
-    near_room = region.contains(cloud.points[:, :2], dilate_cells=int(SEARCH_M / region.cell) + 2)
+    near_room = region.contains(cloud.points[:, :2], dilate_cells=int(tol.wall_search_m / region.cell) + 2)
     points = cloud.subset(near_room)
     eroded = RoomRegion(region.id, ndimage.binary_erosion(region.mask, iterations=4), region.origin,
                         region.cell, region.frames_inside, region.first_frame)
@@ -197,7 +196,7 @@ def room_layout(region: RoomRegion, cloud: Cloud) -> RoomLayout | None:
         # Along-wall extent: from the previous edge's line to the next edge's line.
         span = (min(ends[0], -0.05), max(ends[1], 0.05))
         # The mask sits inside the dilated wall band, so the true face is outward of `mid`.
-        line = fit_wall(points, inward, mid, span, floor_z, ceiling_z)
+        line = fit_wall(points, inward, mid, span, floor_z, ceiling_z, tol)
         if line is None:
             notes.append(f"wall {k}: too few points on its face; kept the coarse mask edge")
             line = WallLine(inward, float(inward @ mid) - 0.08, 0.05, 0, 0.05)
@@ -219,7 +218,7 @@ def room_layout(region: RoomRegion, cloud: Cloud) -> RoomLayout | None:
         polygon = _corners(lines)
         if polygon is None:
             break
-        coverage = [_upper_coverage(points, line, polygon[k], polygon[(k + 1) % len(polygon)], ceiling_z)
+        coverage = [_upper_coverage(points, line, polygon[k], polygon[(k + 1) % len(polygon)], ceiling_z, tol)
                     for k, line in enumerate(lines)]
         worst = int(np.argmin(coverage))
         if coverage[worst] >= MIN_UPPER_COVERAGE:
@@ -248,13 +247,14 @@ def _corners(lines: list[WallLine]) -> np.ndarray | None:
     return np.array(corners)
 
 
-def _upper_coverage(points: Cloud, line: WallLine, start: np.ndarray, end: np.ndarray, ceiling_z: float) -> float:
+def _upper_coverage(points: Cloud, line: WallLine, start: np.ndarray, end: np.ndarray, ceiling_z: float,
+                    tol: Tolerances = LIDAR_TOL) -> float:
     direction = line.direction
     length = float((end - start) @ direction)
     if length < COVERAGE_BIN_M:
         return 0.0
     xy = points.points[:, :2]
-    on_face = (np.abs(xy @ line.normal - line.offset) < INLIER_M) & \
+    on_face = (np.abs(xy @ line.normal - line.offset) < tol.wall_inlier_m) & \
         (points.normals[:, :2] @ line.normal > 0.8) & (points.points[:, 2] > ceiling_z - UPPER_BAND_M) & \
         (points.points[:, 2] < ceiling_z - 0.03)
     along = (xy[on_face] - start) @ direction

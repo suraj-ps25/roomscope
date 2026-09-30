@@ -225,7 +225,8 @@ def carve_free_space(frames, poses: dict[int, np.ndarray], origin: np.ndarray, s
     return counts.reshape(shape)
 
 
-def segment_rooms(cloud: Cloud, frames, poses: dict[int, np.ndarray]) -> tuple[list[RoomRegion], list[str]]:
+def segment_rooms(cloud: Cloud, frames, poses: dict[int, np.ndarray],
+                  min_frames_inside: int = MIN_FRAMES_INSIDE) -> tuple[list[RoomRegion], list[str]]:
     """cloud and poses in the plan frame."""
     xy = cloud.points[:, :2]
     origin = xy.min(axis=0) - 0.5
@@ -253,7 +254,7 @@ def segment_rooms(cloud: Cloud, frames, poses: dict[int, np.ndarray]) -> tuple[l
         inside = np.nonzero(cam_label == label)[0]
         if area < MIN_ROOM_AREA:
             continue
-        if len(inside) < MIN_FRAMES_INSIDE:
+        if len(inside) < min_frames_inside:
             notes.append(f"dropped a {area:.1f} m2 region the camera never entered "
                          "(seen through a doorway or in a mirror)")
             continue

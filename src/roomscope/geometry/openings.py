@@ -28,19 +28,16 @@ from ..capture import Frame
 from .cloud import Cloud
 from .layout import RoomLayout, WallLine
 from .rooms import RoomRegion
+from .tolerances import LIDAR_TOL, Tolerances
 
 GRID_M = 0.02
 RAY_STRIDE = 2
 MAX_RANGE_M = 4.5
-FACE_M = 0.04
-RECESS_M = 0.35
-MIN_VOTES = 3
 OPEN_SCORE = 0.55
 MIN_SIZE_M = 0.45
 DOOR_SILL_MAX_M = 0.10
 MIRROR_MATCH_M = 0.04
 MIRROR_FRACTION = 0.5
-JAMB_WINDOW_M = 0.08
 JAMB_MIN_POINTS = 20
 JAMB_BASE_SIGMA_M = 0.003
 EDGE_FALLBACK_SIGMA_M = 0.015
@@ -109,7 +106,8 @@ def _walls_of(layout: RoomLayout) -> list[_Wall]:
     return walls
 
 
-def _accumulate(frame: Frame, pose: np.ndarray, walls: list[_Wall], rng: np.random.Generator) -> None:
+def _accumulate(frame: Frame, pose: np.ndarray, walls: list[_Wall], rng: np.random.Generator,
+                tol: Tolerances = LIDAR_TOL) -> None:
     depth = frame.depth()[::RAY_STRIDE, ::RAY_STRIDE].astype(np.float64)
     K = frame.depth_K
     rows, cols = np.indices(depth.shape)
@@ -147,10 +145,10 @@ def _accumulate(frame: Frame, pose: np.ndarray, walls: list[_Wall], rng: np.rand
         # A ray that lands on the floor beyond the wall plane went through a doorway, even
         # if it landed only a few centimetres past the face (the threshold, the next room's
         # floor seen at a steep angle).
-        on_floor_beyond = ~noreturn & (behind > FACE_M) & (end_z < wall.floor_z + 0.05)
-        face = ~noreturn & (np.abs(behind) <= FACE_M)
-        recess = ~noreturn & (behind > FACE_M) & (behind <= RECESS_M) & ~on_floor_beyond
-        through = ~noreturn & ((behind > RECESS_M) | on_floor_beyond)
+        on_floor_beyond = ~noreturn & (behind > tol.opening_face_m) & (end_z < wall.floor_z + 0.05)
+        face = ~noreturn & (np.abs(behind) <= tol.opening_face_m)
+        recess = ~noreturn & (behind > tol.opening_face_m) & (behind <= tol.opening_recess_m) & ~on_floor_beyond
+        through = ~noreturn & ((behind > tol.opening_recess_m) | on_floor_beyond)
         size = shape[0] * shape[1]
         for grid, sel in ((wall.evidence.face, face), (wall.evidence.recess, recess),
                           (wall.evidence.through, through), (wall.evidence.noreturn, noreturn)):
@@ -166,26 +164,27 @@ def _accumulate(frame: Frame, pose: np.ndarray, walls: list[_Wall], rng: np.rand
 
 
 def detect_openings(layout: RoomLayout, region: RoomRegion, frames: list[Frame],
-                    poses: dict[int, np.ndarray]) -> tuple[list[Opening], list[str]]:
+                    poses: dict[int, np.ndarray], tol: Tolerances = LIDAR_TOL) -> tuple[list[Opening], list[str]]:
     walls = _walls_of(layout)
     rng = np.random.default_rng(0)
-    inside = [f for f in frames if region.contains(poses[f.index][None, :2, 3], dilate_cells=2)[0]]
+    inside = [f for f in frames if region.contains(poses[f.index][None, :2, 3], dilate_cells=2)[0]] or frames
     for frame in inside:
-        _accumulate(frame, poses[frame.index], walls, rng)
+        _accumulate(frame, poses[frame.index], walls, rng, tol)
     room_tree = cKDTree(layout.points.points)
     openings, notes = [], []
     for wall in walls:
-        found, wall_notes = _extract(layout, wall, room_tree)
+        found, wall_notes = _extract(layout, wall, room_tree, tol)
         openings += found
         notes += wall_notes
     return openings, notes
 
 
-def _extract(layout: RoomLayout, wall: _Wall, room_tree: cKDTree) -> tuple[list[Opening], list[str]]:
+def _extract(layout: RoomLayout, wall: _Wall, room_tree: cKDTree,
+             tol: Tolerances = LIDAR_TOL) -> tuple[list[Opening], list[str]]:
     ev = wall.evidence
     total = ev.face + ev.recess + ev.through + ev.noreturn
     score = np.divide(ev.through + ev.noreturn + 0.5 * ev.recess, total, out=np.zeros(total.shape), where=total > 0)
-    mask = (total >= MIN_VOTES) & (score > OPEN_SCORE)
+    mask = (total >= tol.min_votes) & (score > OPEN_SCORE)
     mask = ndimage.binary_opening(mask, structure=np.ones((2, 2)))
     mask = ndimage.binary_closing(mask, structure=np.ones((3, 3)))
     labels, count = ndimage.label(mask)
@@ -222,8 +221,8 @@ def _extract(layout: RoomLayout, wall: _Wall, room_tree: cKDTree) -> tuple[list[
             if touches_floor:
                 v0 = wall.floor_z
         kind = "opening" if touches_floor and v1 > wall.ceiling_z - 0.05 else ("door" if touches_floor else "window")
-        opening = _refine(layout, wall, kind, u0, u1, v0, v1)
-        observed = float((total[iu0:iu1, iv0:iv1] >= MIN_VOTES).mean())
+        opening = _refine(layout, wall, kind, u0, u1, v0, v1, tol)
+        observed = float((total[iu0:iu1, iv0:iv1] >= tol.min_votes).mean())
         opening.confidence = float(np.clip(observed * min(1.0, fill / 0.8), 0, 1))
         found.append(opening)
     return found, notes
@@ -254,14 +253,15 @@ def _is_mirror(points: np.ndarray, wall: _Wall, room_tree: cKDTree) -> bool:
     return float(np.isfinite(distance).mean()) >= MIRROR_FRACTION
 
 
-def _refine(layout: RoomLayout, wall: _Wall, kind: str, u0: float, u1: float, v0: float, v1: float) -> Opening:
+def _refine(layout: RoomLayout, wall: _Wall, kind: str, u0: float, u1: float, v0: float, v1: float,
+            tol: Tolerances = LIDAR_TOL) -> Opening:
     """Snap opening edges to the reveal surfaces inside the wall thickness."""
     pts, nrm = layout.points.points, layout.points.normals
     direction = wall.line.direction
     u = (pts[:, :2] - wall.start) @ direction
     behind = -(pts[:, :2] @ wall.line.normal - wall.line.offset)
     z = pts[:, 2]
-    in_wall = (behind > 0.01) & (behind < RECESS_M)
+    in_wall = (behind > 0.01) & (behind < tol.opening_recess_m)
     facing_u = nrm[:, :2] @ direction
     mid_height = (z > v0 + 0.1) & (z < v1 - 0.1)
     mid_span = (u > u0 + 0.1) & (u < u1 - 0.1)
@@ -281,7 +281,7 @@ def _refine(layout: RoomLayout, wall: _Wall, kind: str, u0: float, u1: float, v0
 
     # Flying pixels from densified depth are removed upstream by using only high-confidence
     # returns for measurement (ARKit marks depth-edge pixels low/medium).
-    window = JAMB_WINDOW_M
+    window = tol.jamb_window_m
     left = in_wall & mid_height & (facing_u > 0.85) & (np.abs(u - u0) < window)
     right = in_wall & mid_height & (facing_u < -0.85) & (np.abs(u - u1) < window)
     head = in_wall & mid_span & (nrm[:, 2] < -0.85) & (np.abs(z - v1) < window)
