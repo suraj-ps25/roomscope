@@ -69,7 +69,7 @@ def analyse_room(layout: RoomLayout, openings: list, mirrors: list, frames: list
             found = detect(ortho, exclude, ORTHO_STEP)
         else:
             # Floor/ceiling detections are reported in plan x/y (schema), not grid-local uv.
-            found = [d for d in detect(ortho, [], ORTHO_STEP) if _inside(d, polygon, grid)]
+            found = [d for d in detect(ortho, [], ORTHO_STEP, textured=(key == "floor")) if _inside(d, polygon, grid)]
             for d in found:
                 d.polygon_uv = d.polygon_uv + grid.origin[:2]
                 u0, u1, v0, v1 = d.bbox_uv

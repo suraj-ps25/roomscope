@@ -55,6 +55,16 @@ class Orthophoto:
     quality: np.ndarray
 
 
+def _bilinear(image: np.ndarray, x: np.ndarray, y: np.ndarray) -> np.ndarray:
+    x0 = np.floor(x).astype(int)
+    y0 = np.floor(y).astype(int)
+    fx = (x - x0)[:, None]
+    fy = (y - y0)[:, None]
+    top = image[y0, x0] * (1 - fx) + image[y0, x0 + 1] * fx
+    bottom = image[y0 + 1, x0] * (1 - fx) + image[y0 + 1, x0 + 1] * fx
+    return top * (1 - fy) + bottom * fy
+
+
 def wall_grid(key: str, start: np.ndarray, end: np.ndarray, inward: np.ndarray, floor_z: float, ceiling_z: float) -> SurfaceGrid:
     direction = np.append((end - start) / np.linalg.norm(end - start), 0.0)
     return SurfaceGrid(key, "wall", np.array([start[0], start[1], floor_z]), direction, np.array([0.0, 0.0, 1.0]),
@@ -93,6 +103,11 @@ def render(grid: SurfaceGrid, frames: list[Frame], poses: dict[int, np.ndarray],
             continue
         depth = frame.depth()
         if depth is not None:
+            # Min-filtered depth: a texel next to a foreground edge counts as occluded, so
+            # the silhouette of a wardrobe never bleeds onto the wall behind it.
+            valid_depth = np.where(depth > 0, depth, np.inf).astype(np.float32)
+            depth = cv2.erode(valid_depth, np.ones((5, 5), np.uint8))
+            depth[~np.isfinite(depth)] = 0
             dh, dw = depth.shape
             dx = np.clip((px * dw / width).astype(int), 0, dw - 1)
             dy = np.clip((py * dh / height).astype(int), 0, dh - 1)
@@ -106,8 +121,7 @@ def render(grid: SurfaceGrid, frames: list[Frame], poses: dict[int, np.ndarray],
         image = frame.rgb().astype(np.float32)
         if image.shape[1] != width or image.shape[0] != height:
             image = cv2.resize(image, (width, height), interpolation=cv2.INTER_AREA)
-        sampled = cv2.remap(image, px[better].astype(np.float32).reshape(-1, 1), py[better].astype(np.float32).reshape(-1, 1),
-                            cv2.INTER_LINEAR).reshape(-1, 3)
+        sampled = _bilinear(image, px[better], py[better])
         index = np.nonzero(candidate)[0][better]
         colour[index] = sampled
         best_quality[index] = quality[better]
