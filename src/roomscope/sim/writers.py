@@ -79,6 +79,49 @@ def write_photo_tier(scene_path: str | Path, out: Path, rooms: list[str] | None 
     write_ground_truth(scene_path, out)
 
 
+def write_lidar_tier(scene_path: str | Path, out: Path, route: list[str], seed: int = 0,
+                     drift_level: float = 1.0, fps: float = 5.0, rgb_size: tuple[int, int] = (1920, 1440),
+                     exposure: float = 1.0, noise: float = 0.01) -> None:
+    """Stray Scanner layout: depth/ confidence/ odometry.csv camera_matrix.csv rgb.mp4.
+    The poses written are the drifted odometry; the true poses go to a ground-truth file."""
+    import cv2
+    from scipy.spatial.transform import Rotation
+
+    from ..capture import internal_pose_to_stray
+    from .lidar import simulate_lidar
+
+    sim = simulate_lidar(scene_path, drift_level=drift_level, seed=seed, fps=fps, route=route)
+    rgb_camera = Camera.iphone_main(*rgb_size)
+    (out / "depth").mkdir(parents=True, exist_ok=True)
+    (out / "confidence").mkdir(exist_ok=True)
+    rows = []
+    for frame, depth, confidence in zip(sim.bundle.frames, sim.depth, sim.confidence):
+        cv2.imwrite(str(out / "depth" / f"{frame.index:06d}.png"), np.round(depth * 1000).astype(np.uint16))
+        cv2.imwrite(str(out / "confidence" / f"{frame.index:06d}.png"), confidence)
+        stray = internal_pose_to_stray(frame.pose)
+        qx, qy, qz, qw = Rotation.from_matrix(stray[:3, :3]).as_quat()
+        x, y, z = stray[:3, 3]
+        rows.append(f"{frame.timestamp:.6f}, {frame.index}, {x:.6f}, {y:.6f}, {z:.6f}, "
+                    f"{qx:.8f}, {qy:.8f}, {qz:.8f}, {qw:.8f}, {rgb_camera.fx:.4f}, {rgb_camera.fy:.4f}, "
+                    f"{rgb_camera.cx:.4f}, {rgb_camera.cy:.4f}")
+    (out / "odometry.csv").write_text(
+        "timestamp, frame, x, y, z, qx, qy, qz, qw, fx, fy, cx, cy\n" + "\n".join(rows) + "\n")
+    np.savetxt(out / "camera_matrix.csv", rgb_camera.K, delimiter=",", fmt="%.6f")
+
+    encoder = subprocess.Popen(
+        ["ffmpeg", "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24",
+         "-s", f"{rgb_size[0]}x{rgb_size[1]}", "-r", str(fps), "-i", "-",
+         "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", str(out / "rgb.mp4")],
+        stdin=subprocess.PIPE)
+    for rgb in render_many(str(scene_path), rgb_camera, sim.true_poses, seed, exposure, noise):
+        encoder.stdin.write(rgb.tobytes())
+    encoder.stdin.close()
+    if encoder.wait() != 0:
+        raise RuntimeError("ffmpeg failed while encoding the synthetic RGB stream")
+    write_ground_truth(scene_path, out)
+    np.save(out / "ground_truth_poses.npy", sim.true_poses)
+
+
 def write_video_tier(scene_path: str | Path, out: Path, route: list[str], fps: float = 10.0,
                      size: tuple[int, int] = (1280, 720), seed: int = 0,
                      exposure: float = 1.0, noise: float = 0.01) -> None:

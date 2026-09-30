@@ -195,37 +195,44 @@ def _smooth_rotations(poses: np.ndarray, window: int) -> np.ndarray:
 
 @dataclass
 class DriftModel:
-    """Random-walk error of visual-inertial odometry, per metre travelled.
+    """Error of visual-inertial odometry.
 
-    Roll/pitch are observable from gravity and stay clean; yaw and position wander; the
-    metric scale is off by a small constant factor. level=1 is roughly typical ARKit
-    behaviour on a ~40 m indoor walk (tens of cm, ~1-2 deg at the end).
+    Real VIO poses are smooth frame to frame (millimetre jitter) and drift slowly: a
+    velocity bias wanders as a random walk, so position error is an integrated random
+    walk (smooth), heading wanders as a random walk, and metric scale is off by a small
+    constant. Roll/pitch are observable from gravity and stay clean. level=1 lands around
+    0.5% of path length at the end of a ~50 m indoor walk, in line with ARKit reports.
     """
-    translation_per_sqrt_m: float = 0.035
-    yaw_deg_per_sqrt_m: float = 0.25
-    scale_error: float = 0.004
+    bias_per_sqrt_m: float = 0.0012
+    yaw_deg_per_sqrt_m: float = 0.2
+    scale_error: float = 0.003
+    jitter_m: float = 0.0015
 
     @classmethod
     def level(cls, level: float) -> DriftModel:
-        return cls(0.035 * level, 0.25 * level, 0.004 * level)
+        return cls(0.0012 * level, 0.2 * level, 0.003 * level, 0.0015 * min(level, 1.0) if level else 0.0)
 
 
 def apply_drift(poses: np.ndarray, model: DriftModel, seed: int = 0) -> np.ndarray:
+    """Dead-reckoning error: each true step is re-integrated with the heading error and
+    velocity bias of that moment. A heading error bends only the motion after it, never the
+    path already walked."""
     rng = np.random.default_rng(seed)
     scale = 1.0 + rng.normal(0, 1) * model.scale_error if model.scale_error else 1.0
     estimated = [poses[0].copy()]
-    offset_xyz = np.zeros(3)
-    offset_yaw = 0.0
-    origin = poses[0][:3, 3]
+    heading_error = 0.0
+    bias = np.zeros(3)
+    position = poses[0][:3, 3].copy()
     for prev, cur in zip(poses[:-1], poses[1:]):
-        step = float(np.linalg.norm(cur[:3, 3] - prev[:3, 3]))
-        offset_xyz[:2] += rng.normal(0, model.translation_per_sqrt_m * np.sqrt(step), 2)
-        offset_xyz[2] += rng.normal(0, 0.2 * model.translation_per_sqrt_m * np.sqrt(step))
-        offset_yaw += np.deg2rad(rng.normal(0, model.yaw_deg_per_sqrt_m * np.sqrt(step)))
-        yaw_rot = Rotation.from_euler("z", offset_yaw).as_matrix()
+        displacement = cur[:3, 3] - prev[:3, 3]
+        step = float(np.linalg.norm(displacement))
+        heading_error += np.deg2rad(rng.normal(0, model.yaw_deg_per_sqrt_m * np.sqrt(step)))
+        bias += rng.normal(0, model.bias_per_sqrt_m * np.sqrt(step), 3) * np.array([1.0, 1.0, 0.3])
+        yaw_rot = Rotation.from_euler("z", heading_error).as_matrix()
+        position = position + yaw_rot @ (displacement * scale) + bias * step
         est = np.eye(4)
         est[:3, :3] = yaw_rot @ cur[:3, :3]
-        est[:3, 3] = origin + yaw_rot @ ((cur[:3, 3] - origin) * scale) + offset_xyz
+        est[:3, 3] = position + rng.normal(0, model.jitter_m, 3)
         estimated.append(est)
     return np.asarray(estimated)
 
