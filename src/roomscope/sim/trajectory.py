@@ -119,18 +119,27 @@ class Trajectory:
     room_of_frame: list[str]
 
 
+SPIN_SECONDS = 9.0
+
+
 def walkthrough(scene: SceneSpec, route: list[str], fps: float = 6.0, speed: float = 0.35,
                 eye_height: float = 1.45, seed: int = 0) -> Trajectory:
     """route: rooms in visiting order, e.g. [hallway, living, hallway, bedroom, hallway].
-    Every room in the route is circled once; transitions go through the connecting door."""
+    Follows the capture protocol: on entering a room, walk to its middle and turn slowly
+    through a full circle (sees opposite walls seconds apart, so room dimensions do not
+    rest on long-term odometry), then walk the perimeter facing the walls. Transitions go
+    through the connecting door."""
     rng = np.random.default_rng(seed)
     waypoints: list[tuple[np.ndarray, str, str]] = []  # (xy, room, mode)
 
     def add_loop(room: RoomSpec, entry: np.ndarray) -> np.ndarray:
         dims = room.polygon.max(axis=0) - room.polygon.min(axis=0)
+        middle = standable(scene, room, room.polygon.mean(axis=0))
+        waypoints.append((middle, room.id, "walk"))
+        waypoints.append((middle, room.id, "spin"))
         inset = min(0.9, 0.3 * float(dims.min()))
         loop = inset_polygon(room.polygon, inset)
-        start = int(np.argmin(np.linalg.norm(loop - entry, axis=1)))
+        start = int(np.argmin(np.linalg.norm(loop - middle, axis=1)))
         ordered = np.vstack([loop[start:], loop[:start], loop[start:start + 1]])
         for point in ordered:
             waypoints.append((standable(scene, room, point), room.id, "scan"))
@@ -150,27 +159,42 @@ def walkthrough(scene: SceneSpec, route: list[str], fps: float = 6.0, speed: flo
             current = far
     waypoints.append((waypoints[0][0], route[-1], "walk"))
 
-    positions, rooms, modes, headings = [], [], [], []
+    positions, rooms, modes, headings, spins = [], [], [], [], []
     step = speed / fps
     for (a, room_a, mode_a), (b, _, _) in zip(waypoints[:-1], waypoints[1:]):
         length = float(np.linalg.norm(b - a))
-        count = max(1, int(np.ceil(length / step)))
         tangent = (b - a) / max(length, 1e-9)
+        if mode_a == "spin":
+            turns = int(SPIN_SECONDS * fps)
+            for k in range(turns):
+                positions.append(a.copy())
+                rooms.append(room_a)
+                modes.append("spin")
+                headings.append(tangent)
+                spins.append(2 * np.pi * k / turns)
+            mode_a = "walk"
+        count = max(1, int(np.ceil(length / step)))
         for k in range(count):
             positions.append(a + (b - a) * (k / count))
             rooms.append(room_a)
             modes.append(mode_a)
             headings.append(tangent)
+            spins.append(0.0)
 
     poses = []
     travelled = 0.0
-    for i, (xy, mode, tangent) in enumerate(zip(positions, modes, headings)):
+    for i, (xy, mode, tangent, spin) in enumerate(zip(positions, modes, headings, spins)):
         if i:
             travelled += float(np.linalg.norm(xy - positions[i - 1]))
         bob = 0.015 * np.sin(travelled * 2 * np.pi / 0.7)
         eye = np.array([xy[0], xy[1], eye_height + bob]) + rng.normal(0, 0.004, 3)
         base_yaw = np.arctan2(tangent[1], tangent[0])
-        if mode == "scan":
+        if mode == "spin":
+            # Slow full turn on the spot, tilting up and down twice to catch the floor and
+            # ceiling junctions.
+            yaw = base_yaw + spin
+            pitch = 0.4 * np.sin(2 * spin)
+        elif mode == "scan":
             # Face the walls (right of travel on a CCW loop) and sweep up/down and sideways.
             yaw = base_yaw - np.pi / 2 + 0.45 * np.sin(travelled * 2 * np.pi / 1.6)
             pitch = 0.55 * np.sin(travelled * 2 * np.pi / 2.3)

@@ -33,7 +33,7 @@ from ..capture import Frame
 from .cloud import Cloud, fuse
 
 FRAGMENT_SECONDS = 3.0
-FRAGMENT_MAX_DEPTH = 3.5
+FRAGMENT_MAX_DEPTH = 5.0
 OVERLAP_CELL = 0.25
 OVERLAP_MIN = 0.25
 VIO_SIGMA_M_PER_M = 0.01

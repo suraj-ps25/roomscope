@@ -182,10 +182,11 @@ def _draw_segments(segments: list[WallSegment], origin: np.ndarray, shape: tuple
     return mask
 
 
-def _grow_to_walls(mask: np.ndarray, walls: np.ndarray, labels: np.ndarray, label: int) -> np.ndarray:
-    """Geodesic growth up to GROW_LIMIT_M, never into wall cells or another room's free
-    space: fills the unseen strip behind a wardrobe without leaking through gaps."""
-    blocked = walls | ((labels > 0) & (labels != label))
+def _grow_to_walls(mask: np.ndarray, walls: np.ndarray, others: np.ndarray) -> np.ndarray:
+    """Geodesic growth up to GROW_LIMIT_M, never into wall cells or another kept room:
+    fills the unseen strip behind a wardrobe or over a sink without leaking through gaps.
+    Discarded scraps of free space (too small, never entered) do not block growth."""
+    blocked = walls | others
     grown = mask.copy()
     for _ in range(int(GROW_LIMIT_M / CELL)):
         grown = ndimage.binary_dilation(grown, structure=[[0, 1, 0], [1, 1, 1], [0, 1, 0]]) & ~blocked
@@ -245,7 +246,7 @@ def segment_rooms(cloud: Cloud, frames, poses: dict[int, np.ndarray]) -> tuple[l
     cam_label = np.zeros(len(camera_xy), dtype=int)
     cam_label[cam_ok] = labels[cam_ij[cam_ok, 0], cam_ij[cam_ok, 1]]
 
-    regions, notes = [], []
+    kept, notes = [], []
     for label in range(1, count + 1):
         mask = labels == label
         area = mask.sum() * CELL ** 2
@@ -256,7 +257,13 @@ def segment_rooms(cloud: Cloud, frames, poses: dict[int, np.ndarray]) -> tuple[l
             notes.append(f"dropped a {area:.1f} m2 region the camera never entered "
                          "(seen through a doorway or in a mirror)")
             continue
-        mask = _grow_to_walls(ndimage.binary_fill_holes(mask), wall_grid, labels, label)
+        kept.append((label, inside))
+
+    kept_cells = np.isin(labels, [label for label, _ in kept])
+    regions = []
+    for label, inside in kept:
+        own = labels == label
+        mask = _grow_to_walls(ndimage.binary_fill_holes(own), wall_grid, kept_cells & ~own)
         regions.append(RoomRegion("", mask, origin, CELL, len(inside), int(frame_order[inside.min()])))
     regions.sort(key=lambda r: r.first_frame)
     for number, region in enumerate(regions, start=1):
