@@ -1,0 +1,54 @@
+{
+  "id": "lidar-depth-laser-5recordings",
+  "method": "similarity ICP of the fused cloud on laser scans",
+  "min_fitness": 0.5,
+  "devices": {
+    "ARKitScenes (iPad Pro LiDAR)": {
+      "scale": 1.0088,
+      "recordings": [
+        "47429912",
+        "47429914",
+        "47429922"
+      ]
+    }
+  },
+  "measurements": [
+    {
+      "recording": "47429912",
+      "visit": "471428",
+      "source_app": "ARKitScenes (iPad Pro LiDAR)",
+      "scale": 1.00874,
+      "fitness": 0.716,
+      "rmse_m": 0.0144
+    },
+    {
+      "recording": "47429913",
+      "visit": "471428",
+      "source_app": "ARKitScenes (iPad Pro LiDAR)",
+      "scale": 1.00225,
+      "fitness": 0.254,
+      "rmse_m": 0.0155
+    },
+    {
+      "recording": "47429914",
+      "visit": "471428",
+      "source_app": "ARKitScenes (iPad Pro LiDAR)",
+      "scale": 1.0088,
+      "fitness": 0.752,
+      "rmse_m": 0.0133
+    },
+    {
+      "recording": "47429922",
+      "visit": "471425",
+      "source_app": "ARKitScenes (iPad Pro LiDAR)",
+      "scale": 1.01059,
+      "fitness": 0.606,
+      "rmse_m": 0.0156
+    },
+    {
+      "recording": "47429925",
+      "visit": "471425",
+      "error": "need at least one array to concatenate"
+    }
+  ]
+}
