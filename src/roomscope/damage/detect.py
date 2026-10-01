@@ -39,6 +39,7 @@ STAIN_GROW_DELTA_E = 3.5
 MIN_REGION_M2 = 0.01
 CRACK_RIDGE = 0.06
 MIN_CRACK_M = 0.08
+CRACK_MASK_CLEARANCE_M = 0.03
 EDGE_MARGIN_M = 0.04
 SPECK_DARK_L = 18.0
 SPECK_WINDOW_M = 0.03
@@ -175,7 +176,10 @@ def detect(ortho: Orthophoto, exclude_uv: list[tuple[float, float, float, float]
 
     lightness = np.where(usable, lab[..., 0], background[..., 0])
     ridge = sato(lightness / 100.0, sigmas=[1, 2, 3], black_ridges=True)
-    crack_mask = (ridge > CRACK_RIDGE) & usable & ~mould_zone & (delta[..., 0] < -8)
+    # The outline of anything masked (an object in front, an opening, unseen wall) is a
+    # dark ridge in the orthophoto; a crack is not defined by where a mask stops.
+    near_mask = ndimage.binary_dilation(~usable, iterations=max(1, int(CRACK_MASK_CLEARANCE_M / texel)))
+    crack_mask = (ridge > CRACK_RIDGE) & usable & ~near_mask & ~mould_zone & (delta[..., 0] < -8)
     crack_mask = ndimage.binary_closing(crack_mask, structure=np.ones((3, 3)))
     for region in regionprops(label(crack_mask, connectivity=2)) if not textured else []:
         piece = np.zeros_like(crack_mask)

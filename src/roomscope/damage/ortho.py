@@ -6,6 +6,11 @@ that sees it best: frontal, close, and not occluded, the last judged against tha
 depth (anything more than OCCLUSION_M in front of the surface blocks it, so a bed or a
 wardrobe never paints onto the wall behind it). Pixel sizes are metric by construction,
 so damage extent comes straight out in m2 and m.
+
+Views differ in exposure and white balance (a phone adjusts both as it turns), so a
+patchwork of best views has seams, and a seam between a darker and a lighter view is a
+"stain" to any detector. Each view's colour gain is solved from what overlapping views
+see at the same texels, and applied before the patchwork is assembled.
 """
 
 from __future__ import annotations
@@ -55,6 +60,47 @@ class Orthophoto:
     quality: np.ndarray
 
 
+def _view_gains(samples: list[tuple[int, np.ndarray, np.ndarray]], views: int) -> np.ndarray:
+    """Per-view, per-channel colour gains making overlapping views agree: colour = gain x
+    surface, in logs, solved by alternating medians (robust to the occlusion leaks and
+    highlights a few samples always carry), median gain fixed at 1."""
+    gains = np.ones((max(views, 1), 3), dtype=np.float32)
+    if not samples:
+        return gains
+    view_of = np.concatenate([np.full(len(index), v) for v, index, _ in samples])
+    texel = np.concatenate([index for _, index, _ in samples])
+    logs = np.log(np.maximum(np.concatenate([rgb for _, _, rgb in samples]), 1.0))
+    order = np.unique(texel, return_inverse=True)[1]
+    shared = np.bincount(order)[order] >= 2
+    if shared.sum() < 50:
+        return gains
+    view_of, order, logs = view_of[shared], order[shared], logs[shared]
+    g = np.zeros((views, 3))
+    for _ in range(GAIN_ITERATIONS):
+        residual = logs - g[view_of]
+        surface = np.stack([_group_median(order, residual[:, c]) for c in range(3)], axis=1)
+        offset = logs - surface[order]
+        g = np.stack([_group_median(view_of, offset[:, c], views) for c in range(3)], axis=1)
+        seen = np.bincount(view_of, minlength=views) > 0
+        g[seen] -= np.median(g[seen], axis=0)
+        g[~seen] = 0.0
+    return np.exp(-g).astype(np.float32)
+
+
+def _group_median(groups: np.ndarray, values: np.ndarray, size: int | None = None) -> np.ndarray:
+    size = int(groups.max()) + 1 if size is None else size
+    order = np.lexsort((values, groups))
+    groups, values = groups[order], values[order]
+    starts = np.searchsorted(groups, np.arange(size))
+    ends = np.searchsorted(groups, np.arange(size), side="right")
+    out = np.zeros(size)
+    present = ends > starts
+    middle = (starts + ends - 1) // 2
+    middle_hi = (starts + ends) // 2
+    out[present] = 0.5 * (values[middle[present]] + values[middle_hi[present]])
+    return out
+
+
 def _bilinear(image: np.ndarray, x: np.ndarray, y: np.ndarray) -> np.ndarray:
     x0 = np.floor(x).astype(int)
     y0 = np.floor(y).astype(int)
@@ -78,11 +124,22 @@ def level_grid(key: str, kind: str, polygon: np.ndarray, z: float) -> SurfaceGri
                        normal, float(hi[0] - lo[0]), float(hi[1] - lo[1]))
 
 
+GAIN_LATTICE = 8
+GAIN_ITERATIONS = 10
+
+
 def render(grid: SurfaceGrid, frames: list[Frame], poses: dict[int, np.ndarray], step: int = 1) -> Orthophoto:
     rows, cols = grid.shape
     world = grid.points()[::step, ::step].reshape(-1, 3)
+    out_rows, out_cols = int(np.ceil(rows / step)), int(np.ceil(cols / step))
+    lattice = np.zeros((out_rows, out_cols), dtype=bool)
+    lattice[::GAIN_LATTICE, ::GAIN_LATTICE] = True
+    lattice = lattice.reshape(-1)
     best_quality = np.zeros(len(world))
+    best_view = np.full(len(world), -1)
     colour = np.zeros((len(world), 3), dtype=np.float32)
+    samples: list[tuple[int, np.ndarray, np.ndarray]] = []
+    view = -1
     for frame in frames:
         if frame.load_rgb is None:
             continue
@@ -118,15 +175,24 @@ def render(grid: SurfaceGrid, frames: list[Frame], poses: dict[int, np.ndarray],
             inside &= visible
         quality = cosine[candidate] / np.maximum(distance[candidate], 0.3)
         better = inside & (quality > best_quality[candidate])
-        if not better.any():
+        on_lattice = inside & lattice[candidate]
+        if not better.any() and not on_lattice.any():
             continue
+        view += 1
         image = frame.rgb().astype(np.float32)
         if image.shape[1] != width or image.shape[0] != height:
             image = cv2.resize(image, (width, height), interpolation=cv2.INTER_AREA)
+        if on_lattice.any():
+            samples.append((view, np.nonzero(candidate)[0][on_lattice], _bilinear(image, px[on_lattice], py[on_lattice])))
+        if not better.any():
+            continue
         sampled = _bilinear(image, px[better], py[better])
         index = np.nonzero(candidate)[0][better]
         colour[index] = sampled
         best_quality[index] = quality[better]
-    out_rows, out_cols = int(np.ceil(rows / step)), int(np.ceil(cols / step))
+        best_view[index] = view
+    gains = _view_gains(samples, view + 1)
+    painted = best_view >= 0
+    colour[painted] *= gains[best_view[painted]]
     return Orthophoto(grid, colour.reshape(out_rows, out_cols, 3), (best_quality > 0).reshape(out_rows, out_cols),
                       best_quality.reshape(out_rows, out_cols))
