@@ -37,6 +37,9 @@ class Photo:
     fov_x_deg: float | None
     original: np.ndarray
     device: str | None
+    # Camera-to-world rotation when known (views from one on-the-spot turn).
+    rotation: np.ndarray | None = None
+    timestamp: float | None = None
 
 
 def processing_size(width: int, height: int, long_side: int = LONG_SIDE) -> tuple[int, int]:

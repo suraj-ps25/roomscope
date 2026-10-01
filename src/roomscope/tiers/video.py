@@ -1,133 +1,120 @@
 """Video tier: one handheld walkthrough clip -> stitched, dimensioned plan.
 
-  decode + motion keyframes -> MoGe-2 metric depth per keyframe
-  -> MapAnything over overlapping windows, conditioned on that depth
-  -> windows chained through their shared keyframes (rigid fit on camera centres)
-  -> gravity from geometry -> pseudo-LiDAR frames -> the LiDAR tier's core with video
-     noise settings (pose graph, plane/jamb adjustment, rooms, walls, openings)
+The capture protocol starts every room with a slow on-the-spot turn. A turn is a ready-made
+panorama: many views from one point, so rotation is well-conditioned and MoGe-2 gives
+metric depth per view regardless of wall texture. So the video tier is:
 
-Scale sigma: MoGe-2's 6.9% per-view spread averaged over the keyframes that saw each
-room, plus a 2% bias budget, floored at 1.5% for correlated error across a clip.
+  decode -> per-frame rotation (homography on tracked features) -> find the turns
+  -> per turn: ~10 frames evenly spaced in yaw = that room's photo set
+  -> the photo tier's per-room reconstruction (with its multi-view consistency check)
+  -> stitch rooms by verified doorways -> plan
+
+Why not chain the whole clip: MapAnything over overlapping windows of walking keyframes
+gave ATE of 10-57 cm on real ARKitScenes video and broke on the synthetic walk, while turns
+are found reliably (flat_a: 4/4 at the right times, no false positives) and reconstruct
+like photos. With no long trajectory there is no accumulated drift to correct.
 """
 
 from __future__ import annotations
 
+import subprocess
+from pathlib import Path
+
 import numpy as np
 
 from ..build import TierProfile
-from ..capture import CaptureBundle, Frame
-from ..geometry.drift import VIDEO_DRIFT
-from ..geometry.planes import VIDEO_PLANES
-from ..geometry.tolerances import VIDEO_TOL
-from ..io.video import intrinsics_from_focal, read_video, select_keyframes
+from ..io.photos import Photo
+from ..io.video import (STANDING_STILL_PX, find_spins, focal_from_rotation, intrinsics_from_focal, read_video,
+                        turn_rotations, turn_views, yaw_steps, clip_rotations)
 from ..log import log
-from .lidar import LidarOptions, LidarResult, run_lidar
-from .photo import MOGE_VIEW_SPREAD, SCALE_BIAS_BUDGET, _confidence_levels, gravity_rotation
+from .photo import PhotoResult, plan_from_photo_sets
 
-WINDOW = 20
-OVERLAP = 6
-SCALE_FLOOR = 0.015
-DEPTH_EVERY = 3
+VIEWS_PER_TURN = 10
+VIDEO_PROFILE = TierProfile("video", 0.02, "video: rooms from on-the-spot turns, MoGe-2 + MapAnything")
 
 
-def _mean_transform(transforms: list[np.ndarray]) -> np.ndarray:
-    """Chordal mean of rotations plus mean translation. Uses full poses, so it stays
-    well-posed when the shared keyframes come from an on-the-spot turn (camera centres
-    coincide and a fit on positions alone could not fix the rotation)."""
-    u, _, vt = np.linalg.svd(np.sum([t[:3, :3] for t in transforms], axis=0))
-    rot = u @ np.diag([1, 1, np.sign(np.linalg.det(u @ vt))]) @ vt
-    out = np.eye(4)
-    out[:3, :3] = rot
-    out[:3, 3] = np.mean([t[:3, 3] for t in transforms], axis=0)
-    return out
+def _clip(path) -> Path:
+    path = Path(path)
+    if path.is_dir():
+        from ..io.detect import video_files
+        return video_files(path)[0]
+    return path
 
 
-def _chain_windows(images, intrinsics, depths):
-    from ..log import log
-    from ..models.multiview import reconstruct
-
-    n = len(images)
-    starts = list(range(0, max(n - OVERLAP, 1), WINDOW - OVERLAP))
-    poses = [None] * n
-    view_depth = [None] * n
-    view_mask = [None] * n
-    view_conf = [None] * n
-    view_K = [None] * n
-    for start in starts:
-        end = min(start + WINDOW, n)
-        views = reconstruct(images[start:end], intrinsics[start:end], depths[start:end])
-        log("multiview", f"window {starts.index(start) + 1}/{len(starts)} (keyframes {start}-{end - 1})")
-        local = [v.pose for v in views]
-        shared = [k for k in range(start, end) if poses[k] is not None]
-        to_global = _mean_transform([poses[k] @ np.linalg.inv(local[k - start]) for k in shared]) if shared else np.eye(4)
-        for k in range(start, end):
-            if poses[k] is None:
-                poses[k] = to_global @ local[k - start]
-                v = views[k - start]
-                view_depth[k], view_mask[k], view_conf[k], view_K[k] = v.depth, v.mask, v.confidence, v.K
-        if end == n:
-            break
-    return poses, view_depth, view_mask, view_conf, view_K
+def _full_resolution(clip: Path, times: list[float]) -> dict[float, np.ndarray]:
+    """Re-decode just the chosen views at full resolution (damage needs the pixels)."""
+    probe = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
+                            "stream=width,height", "-of", "csv=p=0", str(clip)], capture_output=True, text=True)
+    width, height = (int(v) for v in probe.stdout.strip().split(",")[:2])
+    frames = {}
+    for t in times:
+        out = subprocess.run(["ffmpeg", "-loglevel", "error", "-ss", f"{t:.3f}", "-i", str(clip), "-frames:v", "1",
+                              "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], capture_output=True)
+        pixels = len(out.stdout) // 3
+        if pixels == width * height:
+            frames[t] = np.frombuffer(out.stdout, np.uint8).reshape(height, width, 3)
+        elif pixels:
+            # Rotated clips decode with width and height swapped.
+            frames[t] = np.frombuffer(out.stdout, np.uint8).reshape(width, height, 3)
+    return frames
 
 
-def run_video(path, drift_correction: bool = True) -> LidarResult:
+def _intrinsics(video, size: tuple[int, int]) -> tuple[np.ndarray, float | None]:
+    width, height = size
+    if video.focal_35mm:
+        K = intrinsics_from_focal(video.focal_35mm, video.source_size, size)
+        return K, float(np.degrees(2 * np.arctan(width / (2 * K[0, 0]))))
+    # One lens for the whole clip: the median of MoGe-2's estimates on a few frames.
     from ..models.depth import metric_depth
+    estimates = [metric_depth(video.images[k], None).K for k in np.linspace(0, len(video.images) - 1, 6).astype(int)]
+    fx = float(np.median([e[0, 0] for e in estimates]))
+    fy = float(np.median([e[1, 1] for e in estimates]))
+    K = np.array([[fx, 0, (width - 1) / 2], [0, fy, (height - 1) / 2], [0, 0, 1.0]])
+    return K, float(np.degrees(2 * np.arctan(width / (2 * fx))))
 
-    video = read_video(path)
-    log("ingest", f"decoded {len(video.images)} frames")
-    keys = select_keyframes(video.images, video.timestamps)
-    images = [video.images[k] for k in keys]
-    stamps = video.timestamps[keys]
-    decoded = len(video.images)
-    video.images = []
-    log("ingest", f"{len(keys)} keyframes")
-    height, width = images[0].shape[:2]
-    K = intrinsics_from_focal(video.focal_35mm, video.source_size, (width, height)) if video.focal_35mm else None
-    fov = None if K is None else float(np.degrees(2 * np.arctan(width / (2 * K[0, 0]))))
-    # Metric depth on every DEPTH_EVERY-th keyframe anchors scale; the rest go in as images.
-    metric = [metric_depth(image, fov) if k % DEPTH_EVERY == 0 else None for k, image in enumerate(images)]
-    anchored = [m for m in metric if m is not None]
-    log("depth", f"MoGe-2 metric depth on {len(anchored)} anchor keyframes")
-    if K is None:
-        # One lens for the whole clip: take the median of MoGe's per-frame estimates.
-        fx = float(np.median([m.K[0, 0] for m in anchored]))
-        fy = float(np.median([m.K[1, 1] for m in anchored]))
-        K = np.array([[fx, 0, (width - 1) / 2], [0, fy, (height - 1) / 2], [0, 0, 1.0]])
-    poses, depth, mask, conf, view_K = _chain_windows(images, [K] * len(images),
-                                                      [None if m is None else m.depth for m in metric])
 
-    from ..models import depth as depth_model, multiview
-    depth_model.release()
-    multiview.release()
-    log("multiview", "poses chained over all windows; models released")
-    ratios = [float(np.median(m.depth[v & m.mask & (d > 0.1)] / d[v & m.mask & (d > 0.1)]))
-              for m, d, v in zip(metric, depth, mask) if m is not None and (v & m.mask & (d > 0.1)).sum() > 500]
-    correction = float(np.median(ratios)) if ratios else 1.0
+def run_video(path) -> PhotoResult:
+    clip = _clip(path)
+    video = read_video(clip)
+    height, width = video.images[0].shape[:2]
+    log("ingest", f"decoded {len(video.images)} frames at {width}x{height}")
+    K, fov = _intrinsics(video, (width, height))
+    homographies = {}
+    steps, residuals = yaw_steps(video.images, K, homographies)
+    turns = find_spins(steps, video.timestamps, residuals)
+    log("rooms", f"{len(turns)} on-the-spot turns found: " +
+        ", ".join(f"{video.timestamps[a]:.0f}-{video.timestamps[b]:.0f}s" for a, b in turns))
+    notes = [f"{len(turns)} room turns found in a {video.timestamps[-1]:.0f} s clip"]
+    if not video.focal_35mm and turns:
+        # Without a lens tag, the turns themselves calibrate the focal; metric depth scales
+        # with it, so a monocular estimate's few-percent focal error would land on every wall.
+        focals = [focal_from_rotation([homographies[k] for k in range(a + 1, b + 1)
+                                       if k in homographies and residuals[k] <= STANDING_STILL_PX], K) for a, b in turns]
+        focals = [f for f in focals if f]
+        if focals:
+            fx = float(np.median(focals))
+            log("rooms", f"focal from the turns: {fx:.1f} px (monocular estimate {K[0, 0]:.1f} px)")
+            notes.append(f"focal self-calibrated from {len(focals)} turns: {fx:.1f} px at {width} px width")
+            K = np.array([[fx, 0, K[0, 2]], [0, fx, K[1, 2]], [0, 0, 1.0]])
+            fov = float(np.degrees(2 * np.arctan(width / (2 * fx))))
+    if not turns:
+        notes.append("no on-the-spot turns found (capture protocol not followed): the clip is treated as one room")
+        chosen = [list(np.linspace(0, len(video.images) - 1, VIEWS_PER_TURN).astype(int))]
+    else:
+        chosen = []
+    rotations = {}
+    for turn in turns:
+        turn_chain = turn_rotations(video.images, turn, K)
+        rotations.update(turn_chain)
+        chosen.append(turn_views(turn_chain, VIEWS_PER_TURN))
 
-    frames = []
-    for k, (image, pose) in enumerate(zip(images, poses)):
-        scaled = pose.copy()
-        scaled[:3, 3] *= correction
-        d = np.where(mask[k], depth[k] * correction, 0.0).astype(np.float32)
-        levels = _confidence_levels(conf[k], mask[k])
-        frames.append(Frame(k, float(stamps[k]), view_K[k], (width, height), scaled, None,
-                            load_rgb=(lambda im=image: im), load_depth=(lambda dd=d: dd),
-                            load_confidence=(lambda c=levels: c), depth_K=view_K[k], depth_size=(width, height)))
-
-    from ..geometry.cloud import fuse
-    raw = fuse(frames[:: max(1, len(frames) // 60)], {f.index: f.pose for f in frames}, voxel=0.04, stride=2, min_confidence=1)
-    gravity = np.eye(4)
-    gravity[:3, :3] = gravity_rotation(raw.normals, [f.pose for f in frames])
-    for frame in frames:
-        frame.pose = gravity @ frame.pose
-
-    per_room_views = max(len(anchored) / 4, 1)
-    scale_sigma = max(float(np.hypot(MOGE_VIEW_SPREAD / np.sqrt(per_room_views), SCALE_BIAS_BUDGET)), SCALE_FLOOR)
-    profile = TierProfile("video", scale_sigma, "video multi-view reconstruction, MoGe-2 metric scale")
-    bundle = CaptureBundle(str(getattr(path, "stem", path)).split("/")[-1], "video", frames, source_app="Camera (video)",
-                           device=video.device,
-                           notes=[f"{len(keys)} keyframes from {decoded} decoded frames, scale correction "
-                                  f"{correction:.3f}, focal {'from metadata' if video.focal_35mm else 'estimated'}"])
-    options = LidarOptions(drift_correction=drift_correction, profile=profile, tol=VIDEO_TOL, drift=VIDEO_DRIFT,
-                           planes=VIDEO_PLANES, measure_confidence=1, select_keyframes=False)
-    return run_lidar(bundle, options)
+    times = sorted({float(video.timestamps[k]) for picks in chosen for k in picks})
+    full = _full_resolution(clip, times)
+    rooms = {}
+    for number, picks in enumerate(chosen, start=1):
+        name = f"room_{number}"
+        rooms[name] = [Photo(clip, name, video.images[k], K, fov, full.get(float(video.timestamps[k]), video.images[k]),
+                             video.device, rotations.get(k), float(video.timestamps[k])) for k in picks]
+    compass = clip_rotations(clip, K, (width, height), video.timestamps)
+    orientations = {f"room_{number}": [compass[k] for k in picks] for number, picks in enumerate(chosen, start=1)}
+    return plan_from_photo_sets(rooms, clip.stem, VIDEO_PROFILE, "Camera (video)", notes, orientations)
