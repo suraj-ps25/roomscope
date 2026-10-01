@@ -17,7 +17,7 @@ measurements, for all tiers.
 |---|---|---|
 | LiDAR | ARKit depth + VIO poses (Stray Scanner) | shared core |
 | Video | per room turn: rotations from the clip itself, MoGe-2 metric depth per view, no pose solve | per-room layout, then doorway stitching with known headings |
-| Photo | per room: MoGe-2 + MapAnything on 2–8 stills | per-room layout, then doorway stitching |
+| Photo | per room: MoGe-2 depth per still, registered by matched 3D points | per-room layout, then rooms joined through doorway threshold pairs |
 
 The photo and video tiers turn images into **pseudo-LiDAR frames** (metric depth, pose,
 intrinsics, confidence). Rooms, walls, openings and damage are then the same code as
@@ -69,6 +69,27 @@ With depth from the renderer instead of MoGe-2 (`--oracle-depth`), the synthetic
 tier passes every gate (walls ≤ 0.4 cm, ceilings ≤ 1.1 cm, 9/9 openings, adjacency,
 footprint 0.0%): what remains in a real run is MoGe-2's error, which the intervals carry.
 
+## Photo: registration by matched 3D points
+
+Every photo carries MoGe-2 metric depth, so a SIFT match is a 3D point in both views and
+three matches fix a relative pose and depth scale (`geometry/registration.py`): 3-point
+RANSAC similarities per pair, a maximum spanning tree to start, then a joint Cauchy least
+squares over every view's rotation, translation and depth scale. Residuals are divided by
+the pair's scale and the scale gauge (geometric mean 1) is applied exactly afterwards: with
+a soft gauge the solver shrank whole rooms 1.8% to lower its residuals. MapAnything is the
+fallback when matches don't tie at least three photos and half the set together.
+
+**Stitching through thresholds.** The protocol takes one photo into each room from every
+doorway threshold, back to back (`tiers/photo.py::threshold_links`). The two share a camera
+centre (paired by EXIF capture time), which places one room relative to the other, and the
+doorway wall's inward normals, opposite in the two rooms, fix the rotation. A camera on a
+wall line marks a doorway: an opening found there is a door (its bottom unseen, it had read
+as a window), a relaxed search runs there if none was found, and a door measured on one
+side only is carried through the wall to the other.
+
+**Depth range.** The LiDAR's 4 m cut-off is a sensor property; image depth reaches the far
+walls a corner photo is for, so the image tiers fuse and vote rays to 12 m.
+
 ## Drift
 
 The phone's VIO is excellent over seconds and drifts over tens of metres. Depth
@@ -84,8 +105,9 @@ accumulated as much drift as VIO. So:
      because the end of a scan and its start usually look in different directions.
    - Information comes from the ICP Hessian, so a corridor match is weak along the
      corridor.
-   - Solved with a Cauchy loss on a graduated scale, so a large true loop isn't thrown
-     away as an outlier.
+   - Solved by IRLS with Cauchy weights on loop closures only, on a graduated scale, so a
+     large true loop isn't thrown away as an outlier and odometry is never switched off
+     (letting the loss drop an odometry edge let wrong closures tear the graph).
 2. **Plane-anchored bundle adjustment** (`geometry/planes.py`).
    - Landmarks are every room's wall, floor and ceiling planes, plus door and window
      **jambs**. Jambs are perpendicular to their wall, so they pin the along-wall sliding
@@ -122,9 +144,11 @@ loop closure.
   - **Mirror test**: reflect the see-through points across the wall and check they land
     on the room, using only surfaces facing the wall. Floors and aligned perpendicular
     walls are invariant under that reflection.
-- **Photo stitching** (`geometry/stitch.py`). Door pairs fix the relative pose; they are
-  verified by whether one room's through-door glimpse lands on the other room; then
-  assembled as a greedy maximum spanning tree with no door reuse and no overlap.
+- **Stitching** (`geometry/stitch.py`). Fixed links (photo threshold pairs) first, then
+  door-pair candidates: a door pair fixes the relative pose and is verified by whether one
+  room's through-door glimpse lands on the other room (with known room headings, from the
+  video's compass, a candidate must also have the right rotation); assembled as a greedy
+  maximum spanning tree with no door reuse and no overlap.
 
 ## Damage
 
