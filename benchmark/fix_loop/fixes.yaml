@@ -151,3 +151,70 @@
   flags: []
   before: f57442f
   after: ed27738
+
+# The declared fix (docs/fix_declaration.md): one entry per recording the causes were
+# found on; the whole-benchmark before/after is in docs/fix_loop.md.
+- id: real-openings-47429912
+  title: A floor-level door read as a window (declared fix, cause b)
+  symptom: >-
+    Real bathroom recording, laser truth: the 0.80 m door reported as a 0.82 m window with
+    a 0.085 m sill: one phantom, one miss.
+  cause: the door/window class was decided on the vote region, before the sill was snapped to the reveal
+  fix: after refinement a window with its sill within 0.10 m of the floor is a door (plan openings only, not adjustment landmarks)
+  capture: data/public/arkitscenes/47429912
+  truth: benchmark/ground_truth/arkitscenes_471428.yaml
+  flags: []
+  before: 7e5e7be
+  after: 1b84c55
+
+- id: real-openings-47429922
+  title: A two-sash window read as two windows (declared fix, cause a)
+  symptom: >-
+    Real living room: one 1.36 m window reported as 0.60 and 0.66 m windows 0.16 m apart:
+    one phantom and a -70 cm width error.
+  cause: the frame member between sashes breaks the run of open votes; each run became an opening
+  fix: openings on one wall at most 0.2 m apart and overlapping in height are one opening
+  capture: data/public/arkitscenes/47429922
+  truth: benchmark/ground_truth/arkitscenes_471425.yaml
+  flags: []
+  before: 7e5e7be
+  after: 1b84c55
+
+- id: real-openings-42897688
+  title: A four-sash window read as a window and a door (declared fix, cause a)
+  symptom: >-
+    Held-out recording: one 2 m window reported as a 1.09 m window and a 0.90 m door beside
+    it: two phantoms.
+  cause: the sash that sees through to the floor reads as a door next to the window it belongs to
+  fix: as real-openings-47429922
+  capture: data/public/arkitscenes/42897688
+  truth: benchmark/ground_truth/arkitscenes_423441.yaml
+  flags: []
+  before: 7e5e7be
+  after: 1b84c55
+
+- id: real-ceiling-scale-47429914
+  title: Every real ceiling read low (dev recording)
+  symptom: >-
+    All 14 real-room ceilings were low against laser truth: dev median -0.9%, held-out
+    -0.74%; this bathroom recording -2.0 cm (gate 1.5 cm).
+  cause: >-
+    The iPad Pro's LiDAR depth reads short: similarity ICP of the fused cloud on the laser
+    scan needs a scale of 1.0087-1.0106 on every dev recording that registers well.
+  fix: per-device depth-scale calibration from the dev visits (x1.0088), applied to that device only
+  capture: data/public/arkitscenes/47429914
+  truth: benchmark/ground_truth/arkitscenes_471428.yaml
+  flags: []
+  before: 7f5bd43
+  after: 561189d
+
+- id: real-ceiling-scale-42897678
+  title: Every real ceiling read low (held-out recording)
+  symptom: Held-out large room, laser truth; the correction was fitted without this visit.
+  cause: see real-ceiling-scale-47429914
+  fix: see real-ceiling-scale-47429914
+  capture: data/public/arkitscenes/42897678
+  truth: benchmark/ground_truth/arkitscenes_423441.yaml
+  flags: []
+  before: 7f5bd43
+  after: 561189d
