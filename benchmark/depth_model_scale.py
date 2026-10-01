@@ -75,6 +75,13 @@ def arkitscenes(sequence: Path) -> list[float]:
     return ratios
 
 
+def _spread(ratios: list[float]) -> float:
+    """Robust per-view spread: 1.4826 x MAD of the log ratios. A few views of a scan hole
+    (black) or a window give wild ratios that a standard deviation would report instead."""
+    logs = np.log(np.asarray(ratios))
+    return float(1.4826 * np.median(np.abs(logs - np.median(logs))))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--replica", default=str(ROOT / "data" / "captures" / "replica"))
@@ -85,12 +92,12 @@ def main() -> int:
     for capture in sorted(Path(args.replica).glob("*_video")):
         r = scanned_room(capture)
         rows.append({"scene": capture.name.replace("_video", ""), "source": "Replica render, true depth", "views": len(r),
-                     "median_ratio": float(np.median(r)), "view_spread": float(np.std(r))})
+                     "median_ratio": float(np.median(r)), "view_spread": _spread(r)})
         print(json.dumps(rows[-1]), flush=True)
     for sequence in sorted(p for p in Path(args.arkitscenes).iterdir() if p.is_dir()):
         r = arkitscenes(sequence)
         rows.append({"scene": f"ARKitScenes {sequence.name}", "source": "real iPad frames, LiDAR depth", "views": len(r),
-                     "median_ratio": float(np.median(r)), "view_spread": float(np.std(r))})
+                     "median_ratio": float(np.median(r)), "view_spread": _spread(r)})
         print(json.dumps(rows[-1]), flush=True)
     bias = np.array([row["median_ratio"] for row in rows])
     summary = {"scenes": rows, "bias_median": float(np.median(bias)), "bias_sd_log": float(np.std(np.log(bias)))}

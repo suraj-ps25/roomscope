@@ -1,0 +1,23 @@
+{
+  "id": "lidar-conformal-3captures",
+  "tier": "lidar",
+  "level": 0.9,
+  "multipliers": {
+    "wall_length": 1.0,
+    "ceiling_height": 1.0,
+    "opening_width": 1.3938432045910392,
+    "floor_area": 1.0
+  },
+  "samples": {
+    "wall_length": 48,
+    "ceiling_height": 12,
+    "opening_width": 27,
+    "floor_area": 12
+  },
+  "held_out_coverage": {
+    "wall_length": 0.9583333333333334,
+    "ceiling_height": 1.0,
+    "floor_area": 1.0,
+    "opening_width": 0.9629629629629629
+  }
+}

@@ -36,16 +36,16 @@ phone captures, which this build didn't have (no iPhone was available). Numbers 
 | Repeatability ≤ 1 cm or 0.5% per wall | `evaluate.repeatability`, `benchmark/run_sim.py` | three independent LiDAR captures of the flat, pairwise | measured (synthetic); real pending |
 | Drift accountability + on/off ablation | `geometry/drift.py`, `geometry/planes.py`, `--no-drift-correction` | every LiDAR capture run both ways | done |
 | Photo whole-property stitch: no overlaps, footprint ±8% | `tiers/photo.py::threshold_links`, `geometry/stitch.py` | overlap and footprint per run | done (synthetic); real pending |
-| Walls: photo ±8%, video ±3%; calibration scored at every tier | `build.py`, `benchmark/calibrate.py` | scanned-room and synthetic results; held-out interval coverage | partial: photo meets ±8% on most scanned rooms; video ±3% is not met with monocular depth (per-scene scale bias, measured) |
+| Walls: photo ±8%, video ±3%; calibration scored at every tier | `build.py`, `benchmark/calibrate.py` | scanned-room and synthetic results; held-out interval coverage | partial: on scanned rooms with the depth model, photo meets ±8% on 4 of 8 and video ±3% on 0 of 8 (the depth model's per-scene scale bias, measured at 5.9% across scenes); with true depth 6 of 8 and 5 of 8; held-out interval coverage 88–96% after calibration |
 
 ## Parts 3–5
 
 | Requirement | Where | Evidence | Status |
 |---|---|---|---|
 | Head-to-head vs a consumer app on 2 rooms (≥ 70% beat or tie) | `benchmark/head_to_head/` | protocol + scorer (tested on synthetic numbers) | pending: needs an iPhone and the two rooms |
-| Fix loop: declaration, regenerable before/after, diff | `docs/fix_loop.md`, `benchmark/fix_loop/` | five regenerable entries (each one commit, same capture both sides, one scorer) + history | done |
+| Fix loop: declaration, regenerable before/after, diff | `docs/fix_loop.md`, `benchmark/fix_loop/` | seven regenerable entries (each one commit, same capture both sides, one scorer; tables in `benchmark/fix_loop/results/`) + history | done |
 | Commit as you work | git history | small commits with the measured before/after in the message | done |
-| Walk-in test: every tier runs cold | `scripts/setup.sh`, `README.md` | fresh clone → tests passing in 2.5 min (weights cached); all tiers run on generated captures | done (synthetic); real pending |
+| Walk-in test: every tier runs cold | `scripts/setup.sh`, `scripts/walk_in.sh` | rehearsed on a fresh clone from GitHub: setup 1.5 min (weights cached), then every tier cold, one command each (LiDAR 6.4 min, all gates pass; video 5 min; photo 31 s) | done (synthetic); real pending |
 
 ## Deliverables
 

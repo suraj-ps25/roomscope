@@ -23,30 +23,36 @@ LiDAR, so a non-Pro phone runs video and photo only.
 ## Processing machine
 
 Runs locally; no service of ours is called. Tested on an Apple M2 (16 GB, macOS 15).
-Models run on the Apple GPU (MPS), CUDA when present, or CPU (slower). Fresh clone to
-passing tests: 2.5 min with model weights cached (the first download is ~7 GB).
+Models run on the Apple GPU (MPS), CUDA when present, or CPU (slower). Fresh clone from GitHub to
+passing tests: 1.5–2.5 min with model weights cached (the first download is ~7 GB).
 
 ## Accuracy by tier
 
 | Quantity | LiDAR (synthetic, 3 captures) | Video | Photo |
 |---|---|---|---|
-| Wall length | max 1.3–2.0 cm per capture | see report: scanned rooms, depth model | see report: scanned rooms, depth model |
-| Ceiling height | max 0.24–1.16 cm (gate 1.5 cm: passes on all three) | see report | see report |
+| Wall length | max 1.3–2.0 cm per capture | scanned rooms, depth model: worst wall median 11.2%, 0 of 8 rooms within ±3%; true depth: 1.9%, 5 of 8 | scanned rooms, depth model: worst wall median 9.0%, 4 of 8 within ±8%; true depth: 2.0%, 6 of 8 |
+| Ceiling height | max 0.24–1.16 cm (gate 1.5 cm: passes on all three) | flat, true depth: max 1.3 cm | flat, true depth: max 0.65 cm |
+| Floor area | within 0.75% | scanned rooms, depth model: median 13.9% | scanned rooms, depth model: median 13.8% |
 | Opening width ≤ 2 cm | 7/9, 9/9, 9/9 (25 of 27; seed 0's two glass windows ~3 cm off) | 9/9 on the flat with true depth | 9/9 on the flat with true depth |
 | Stitch | adjacency correct on all three; footprint within 0.75% | correct with true depth | correct with true depth |
 | Repeatability (1 cm or 0.5%) | 16/16 walls for one pair, 11/16 and 5/16 for the pairs with seed 1 (worst 3.3 cm): limited by the sensor's per-capture depth scale bias (σ 0.2%) | – | – |
 | Drift ablation | off: walls out by up to 1.8 m, adjacency wrong on all three | no long trajectory | no trajectory |
-| Metric scale from | LiDAR depth | MoGe-2: per-scene bias, measured −9% to +4% | MoGe-2, same |
+| Metric scale from | LiDAR depth | MoGe-2: per-scene bias, measured −14% to +4% (5.9% spread) | MoGe-2, same |
 
 **What limits each tier.**
 - **LiDAR:** the sensor's depth scale bias between captures, and window jambs seen
   through glass.
 - **Photo and video:** with rendered true depth in place of the depth model, the same
-  pipeline is within millimetres on most rooms. What remains in a real run is the depth
+  pipeline's worst wall is a median 2% off on the scanned rooms (and under 1 cm on the
+  synthetic flat). What remains in a real run is the depth
   model's per-scene scale bias. Views of one room share it, so more photos don't remove
   it; the calibrated intervals carry it.
-- **The video ±3% wall gate is not met** with monocular depth; the photo ±8% gate is met
-  on most rooms.
+- **The video ±3% wall gate is not met** with monocular depth (0 of 8 scanned rooms), and
+  the photo ±8% gate on half of them. With true depth the same pipeline meets them on 5 of
+  8 and 6 of 8: the remaining failures are cluttered or non-rectangular rooms (office0's
+  freestanding boards, office1's jog).
+- **Intervals** are calibrated per tier (`calibration/`); held-out coverage after
+  calibration is 88–96% for walls across the three tiers.
 
 ## Timing (M2, 16 GB)
 

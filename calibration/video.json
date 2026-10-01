@@ -1,0 +1,21 @@
+{
+  "id": "video-conformal-9captures",
+  "tier": "video",
+  "level": 0.9,
+  "multipliers": {
+    "wall_length": 8.342044386146314,
+    "ceiling_height": 5.777561681369873,
+    "floor_area": 6.926226549775938
+  },
+  "samples": {
+    "wall_length": 48,
+    "ceiling_height": 12,
+    "opening_width": 4,
+    "floor_area": 12
+  },
+  "held_out_coverage": {
+    "wall_length": 0.875,
+    "ceiling_height": 0.8333333333333334,
+    "floor_area": 0.9166666666666666
+  }
+}

@@ -138,10 +138,12 @@ Split-conformal multipliers per tier and quantity are fitted on ground truth, wi
 leave-one-capture-out coverage reported.
 
 The photo and video scale budget rests on a measured fact: **MoGe-2's metric scale error
-is a per-scene bias**, spanning roughly −9% to +4% across the scenes measured. Views of
-one room share it, so averaging views does not remove it. That bias, not the pipeline, is
-what stands between the video tier and its ±3% wall gate: with rendered true depth in
-place of the model, the same pipeline is within a few millimetres on most rooms.
+is a per-scene bias**: −14% to +4% across the ten scenes measured, 5.9% spread (sd of
+log). Views of one room share it, so averaging views does not remove it. That bias is what
+stands between the video tier and its ±3% wall gate. On the eight scanned rooms the video
+tier's worst wall is a median 11.2% off with the model, and 1.9% with rendered true depth
+in its place. Calibrated intervals carry the bias: walls need a ×8.3 multiplier on the
+propagated sigma at the video tier, with 88% held-out coverage.
 
 ## 7. Damage
 
@@ -159,7 +161,7 @@ Every fix began as a failing number, was isolated by an ablation or a stage-leve
 diagnostic against truth, landed as one commit with its before/after in the message, and
 was followed by a re-run of every tier the change touched. One such re-run caught a fix
 for the video tier regressing LiDAR openings (8/9 → 7/9); its cause, a margin defined as
-a share of a per-tier tolerance, was fixed the same day. Five entries regenerate from
+a share of a per-tier tolerance, was fixed the same day. Seven entries regenerate from
 their two commits on an identical capture with one scorer (`benchmark/fix_loop/`).
 
 ## 9. Limitations and next steps

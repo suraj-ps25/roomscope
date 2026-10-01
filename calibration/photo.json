@@ -1,0 +1,22 @@
+{
+  "id": "photo-conformal-9captures",
+  "tier": "photo",
+  "level": 0.9,
+  "multipliers": {
+    "wall_length": 2.1136386206779747,
+    "ceiling_height": 1.6517082602474593,
+    "opening_width": 2.836742786212798,
+    "floor_area": 2.6542404162629674
+  },
+  "samples": {
+    "wall_length": 48,
+    "ceiling_height": 12,
+    "opening_width": 6,
+    "floor_area": 12
+  },
+  "held_out_coverage": {
+    "wall_length": 0.9166666666666666,
+    "ceiling_height": 0.9166666666666666,
+    "floor_area": 0.9166666666666666
+  }
+}
