@@ -380,6 +380,40 @@ def match_doors(openings: list[Opening], layouts: dict[str, RoomLayout]) -> list
     return pairs
 
 
+def carry_unpaired_doors(openings: list[Opening], layouts: dict[str, RoomLayout]) -> list[Opening]:
+    """A doorway goes through its wall. A door seen from one side only (the other side's
+    view of it was too oblique or too brief) whose wall has another room's wall facing it a
+    wall-thickness away gets the same opening on that wall, paired with it. A door with no
+    room behind it (the front door, a cupboard) gets nothing."""
+    carried = []
+    for a in [o for o in openings if o.kind in ("door", "opening") and o.partner is None]:
+        la = layouts[a.room]
+        line_a, start_a = la.lines[a.wall], la.polygon[a.wall]
+        centre = start_a + line_a.direction * (a.u0 + a.u1) / 2
+        best = None
+        for room, lb in layouts.items():
+            if room == a.room:
+                continue
+            for k, line_b in enumerate(lb.lines):
+                if line_a.normal @ line_b.normal > -0.95:
+                    continue
+                gap = -(centre @ line_b.normal - line_b.offset)
+                start_b = lb.polygon[k]
+                length_b = float(np.linalg.norm(lb.polygon[(k + 1) % len(lb.polygon)] - start_b))
+                ends = sorted(float((start_a + line_a.direction * u - start_b) @ line_b.direction) for u in (a.u0, a.u1))
+                if 0.03 < gap < 0.45 and ends[0] > -0.05 and ends[1] < length_b + 0.05 and (best is None or gap < best[0]):
+                    best = (gap, room, k, ends)
+        if best is None:
+            continue
+        _, room, k, (u0, u1) = best
+        lb = layouts[room]
+        b = Opening(room, k, a.kind, u0, u1, lb.floor_z, lb.floor_z + (a.v1 - a.v0), a.sigma_u1, a.sigma_u0,
+                    0.003, a.sigma_v1, 0.7 * a.confidence, a.jambs_found, connects_to=a.room, partner=a)
+        a.connects_to, a.partner = room, b
+        carried.append(b)
+    return carried
+
+
 def _fuse_pair(a: Opening, b: Opening, la: RoomLayout, lb: RoomLayout) -> None:
     """Both sides of a doorway see the same jambs and head: combine each edge by inverse
     variance and write the result back into each side's own wall coordinates."""

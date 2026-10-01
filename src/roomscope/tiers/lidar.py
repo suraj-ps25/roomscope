@@ -18,7 +18,7 @@ from ..capture import CaptureBundle, Frame
 from ..geometry.cloud import fuse
 from ..geometry.drift import LIDAR_DRIFT, DriftSettings, correct_drift
 from ..geometry.layout import RoomLayout, room_layout
-from ..geometry.openings import detect_openings, match_doors
+from ..geometry.openings import carry_unpaired_doors, detect_openings, match_doors
 from ..geometry.planes import LIDAR_PLANES, PlaneSettings, plane_adjust
 from ..geometry.rooms import align, segment_rooms
 from ..geometry.tolerances import LIDAR_TOL, Tolerances
@@ -126,6 +126,9 @@ def run_lidar(bundle: CaptureBundle, options: LidarOptions | None = None) -> Lid
         mirrors_by_room[region.id] = [o for o in found if o.kind == "mirror"]
         opening_notes += [f"{region.id}: {n}" for n in notes]
     match_doors([o for found in openings_by_room.values() for o in found], layouts)
+    for o in carry_unpaired_doors([o for found in openings_by_room.values() for o in found], layouts):
+        openings_by_room[o.room].append(o)
+        opening_notes.append(f"{o.room}: door taken from the {o.connects_to} side of the shared doorway ({o.width:.2f} m)")
     clock.lap("openings")
     log("openings", f"{sum(len(v) for v in openings_by_room.values())} openings")
 
