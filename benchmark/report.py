@@ -126,6 +126,23 @@ def depth_section(bench: Path) -> list[str]:
     return lines
 
 
+def calibration_section(bench: Path) -> list[str]:
+    lines = ["## Interval calibration", "",
+             "Propagated intervals (fit uncertainty through the geometry, plus the tier's scale budget) are scaled per tier",
+             "and quantity by split-conformal multipliers fitted on these runs. Coverage is leave-one-capture-out: a",
+             "capture never calibrates the intervals it is scored on. Target: 90%.", ""]
+    rows = []
+    for tier in ("lidar", "video", "photo"):
+        table = _load(bench / f"calibration_{tier}.json")
+        if not table:
+            continue
+        for quantity, k in table["multipliers"].items():
+            rows.append({"tier / quantity": f"{tier} / {quantity}", "multiplier": f"{k:.2f}",
+                         "samples": table["samples"].get(quantity), "held-out coverage":
+                         _pct(table["held_out_coverage"].get(quantity), 0)})
+    return lines + _table(rows, "tier / quantity") + [""]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--bench", default=str(ROOT / "runs" / "bench"))
@@ -142,7 +159,8 @@ def main() -> int:
              "three tiers (multi-room, stitching, openings, drift), real scanned rooms for the photo and video tiers, and",
              "the depth model's measured scale error on real iPad imagery. Gates are the brief's: openings ≤ 2 cm on",
              "≥ 85% (misses and phantoms count), ceiling ≤ 1.5 cm, walls ±3% (video) / ±8% (photo), footprint ±8%.", ""]
-    lines += lidar_section(bench) + flat_section(bench) + replica_section(bench) + depth_section(bench)
+    lines += (lidar_section(bench) + flat_section(bench) + replica_section(bench) + depth_section(bench)
+              + calibration_section(bench))
     Path(args.out).write_text("\n".join(lines) + "\n")
     print(f"wrote {args.out}")
     return 0

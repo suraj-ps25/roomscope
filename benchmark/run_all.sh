@@ -40,5 +40,16 @@ $PY benchmark/run_replica.py --out "$OUT/replica"
 echo "== depth model scale per scene"
 $PY benchmark/depth_model_scale.py --out "$OUT/depth_scale.json"
 
+echo "== interval calibration (split conformal, leave-one-capture-out coverage)"
+lidar_runs=(); for s in 0 1 2; do lidar_runs+=("$OUT/lidar/flat_a_lidar_d1_s${s}_corrected/plan.json:data/captures/simbench/flat_a_lidar_d1_s$s/ground_truth.json"); done
+$RS calibrate lidar "${lidar_runs[@]}" --out "$OUT/calibration_lidar.json" > /dev/null
+for tier in photo video; do
+  runs=("$OUT/flat_a_${tier}_model/plan.json:data/captures/sim_flat_a_$tier/ground_truth.json")
+  for room in room0 room1 room2 office0 office1 office2 office3 office4; do
+    runs+=("$OUT/replica/${room}_${tier}_model/plan.json:data/captures/replica/${room}_$tier/ground_truth.json")
+  done
+  $RS calibrate $tier "${runs[@]}" --out "$OUT/calibration_$tier.json" > /dev/null
+done
+
 echo "== report"
 $PY benchmark/report.py --bench "$OUT" --out docs/benchmark_report.md
