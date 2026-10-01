@@ -261,6 +261,20 @@ def _under_ceiling(cloud: Cloud) -> np.ndarray:
     return vertical & (z > local - UNDER_CEILING_M) & (z < local - 0.02) & (z > HEADER_MIN_Z - 0.1)
 
 
+ROOF_REACH_M = 0.25
+
+
+def _roofed(cloud: Cloud, origin: np.ndarray, shape: tuple[int, int]) -> np.ndarray:
+    """Cells with observed ceiling over them (within ROOF_REACH_M, bridging gaps in
+    coverage). Free space carved out through an exterior door or a window has no ceiling
+    over it, so it can't join a room. Without enough ceiling in view, everything passes."""
+    ceiling = (cloud.normals[:, 2] < -0.9) & (cloud.points[:, 2] > 1.8)
+    if ceiling.sum() < 200:
+        return np.ones(shape, dtype=bool)
+    seen = _rasterise(cloud.points[ceiling, :2], origin, shape) > 0
+    return ndimage.binary_dilation(seen, iterations=int(round(ROOF_REACH_M / CELL)))
+
+
 def _grow_to_walls(mask: np.ndarray, walls: np.ndarray, others: np.ndarray) -> np.ndarray:
     """Geodesic growth up to GROW_LIMIT_M, never into wall cells or another kept room:
     fills the unseen strip behind a wardrobe or over a sink without leaking through gaps.
@@ -321,6 +335,8 @@ def segment_rooms(cloud: Cloud, frames, poses: dict[int, np.ndarray],
                                if s.end - s.start >= BARRIER_MIN_M])
     wall_grid = ndimage.binary_dilation(_draw_segments(traces, origin, shape), structure=np.ones((3, 3)))
     free = (carve_free_space(frames, poses, origin, shape) >= 3) & ~wall_grid
+    roofed = _roofed(cloud, origin, shape)
+    free &= roofed
     free = ndimage.binary_opening(free, structure=np.ones((3, 3)))
     labels, count = ndimage.label(free, structure=[[0, 1, 0], [1, 1, 1], [0, 1, 0]])
 
@@ -362,7 +378,7 @@ def segment_rooms(cloud: Cloud, frames, poses: dict[int, np.ndarray],
     regions = []
     for label, inside in kept:
         own = labels == label
-        mask = _grow_to_walls(ndimage.binary_fill_holes(own), wall_grid, kept_cells & ~own)
+        mask = _grow_to_walls(ndimage.binary_fill_holes(own), wall_grid | ~roofed, kept_cells & ~own)
         regions.append(RoomRegion("", mask, origin, CELL, len(inside), int(frame_order[inside.min()])))
     regions.sort(key=lambda r: r.first_frame)
     for number, region in enumerate(regions, start=1):
