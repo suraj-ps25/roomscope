@@ -284,8 +284,9 @@ def _refine(layout: RoomLayout, wall: _Wall, kind: str, u0: float, u1: float, v0
     # Flying pixels from densified depth are removed upstream by using only high-confidence
     # returns for measurement (ARKit marks depth-edge pixels low/medium).
     window = tol.jamb_window_m
-    left = in_wall & mid_height & (facing_u > 0.85) & (np.abs(u - u0) < window)
-    right = in_wall & mid_height & (facing_u < -0.85) & (np.abs(u - u1) < window)
+    reach = tol.jamb_reach_m
+    left = in_wall & mid_height & (facing_u > 0.85) & (u > u0 - window - reach) & (u < u0 + window)
+    right = in_wall & mid_height & (facing_u < -0.85) & (u > u1 - window) & (u < u1 + window + reach)
     head = in_wall & mid_span & (nrm[:, 2] < -0.85) & (np.abs(z - v1) < window)
     sill = in_wall & mid_span & (nrm[:, 2] > 0.85) & (np.abs(z - v0) < window)
     ru0, su0, f0 = edge(left, u, u0)

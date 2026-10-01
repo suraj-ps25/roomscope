@@ -29,6 +29,7 @@ INLIER_M = 0.06
 MIN_SIGMA_M = 0.02
 EFFECTIVE_POINTS = 50
 UNSEEN_SIGMA_M = 0.15
+FOOTPRINT_MARGIN_M = 0.05
 
 
 def _side(points: np.ndarray, normals: np.ndarray, axis: int, sign: int, beyond: float) -> tuple[float, float, int] | None:
@@ -56,7 +57,10 @@ def _side(points: np.ndarray, normals: np.ndarray, axis: int, sign: int, beyond:
     # Substantial candidates: real support and spanning much of the room. Of those, the
     # nearest is the wall; glimpses through doors, window "sky" planes and mirror
     # phantoms all lie farther out, furniture fronts fail the extent test.
+    extent = np.nan_to_num(extent)
     substantial = (support >= SUPPORT_SHARE * support.max()) & (extent >= EXTENT_SHARE * extent.max())
+    if not substantial.any():
+        substantial = support == support.max()
     chosen = centres[substantial][np.argmin((centres[substantial] - beyond) * sign)]
     near = values[np.abs(values - chosen) < INLIER_M]
     offset = float(np.median(near))
@@ -90,6 +94,15 @@ def rectangle_layout(room: str, cloud: Cloud, cameras_xy: np.ndarray) -> RoomLay
     if x1 - x0 < 0.8 or y1 - y0 < 0.8:
         return None
     polygon = np.array([[x0, y0], [x1, y0], [x1, y1], [x0, y1]])
+    # Levels again from this room's own footprint (to the wall faces): through a doorway
+    # the neighbour's ceiling, or a step down to its floor, is in view too.
+    xy = cloud.points[:, :2]
+    margin = FOOTPRINT_MARGIN_M
+    inside = (xy[:, 0] > x0 - margin) & (xy[:, 0] < x1 + margin) & (xy[:, 1] > y0 - margin) & (xy[:, 1] < y1 + margin)
+    if (floor_rows & inside & (z < floor_z + 0.3)).sum() > 50:
+        floor_z, floor_sigma = _level(z[floor_rows & inside & (z < floor_z + 0.3)])
+    if (ceiling_rows & inside).sum() > 50:
+        ceiling_z, ceiling_sigma = _level(z[ceiling_rows & inside])
     # CCW walls: south (inward +y), east (inward -x), north (inward -y), west (inward +x).
     lines = [WallLine(np.array([0.0, 1.0]), y0, sides[(1, -1)][1], sides[(1, -1)][2], sides[(1, -1)][1]),
              WallLine(np.array([-1.0, 0.0]), -x1, sides[(0, 1)][1], sides[(0, 1)][2], sides[(0, 1)][1]),
@@ -98,6 +111,6 @@ def rectangle_layout(room: str, cloud: Cloud, cameras_xy: np.ndarray) -> RoomLay
     notes = ["sparse-view layout: best-supported wall per side (rectangle)"]
     if unseen:
         notes.append(f"no wall seen on the {', '.join(unseen)} side; taken from the observed extent (15 cm sigma)")
-    if not ceiling_rows.sum() > 50:
+    if not (ceiling_rows & inside).sum() > 50:
         notes.append("ceiling barely seen; height from the highest points (wide interval)")
     return RoomLayout(room, polygon, lines, floor_z, ceiling_z, floor_sigma, ceiling_sigma, cloud, notes)

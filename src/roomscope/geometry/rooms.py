@@ -70,6 +70,11 @@ def align(cloud: Cloud) -> Alignment:
     angle, _ = dominant_wall_angle(cloud.normals)
     rot = yaw_matrix(-angle)
     up = cloud.normals[:, 2] > 0.9
+    if up.sum() < 20:
+        # No floor in view: keep the frame's own zero; layout levels say so later.
+        transform = np.eye(4)
+        transform[:3, :3] = rot
+        return Alignment(transform, 0.0, float(np.rad2deg(angle)))
     z = cloud.points[up, 2]
     # The floor is the lowest large upward-facing level (tables and beds are higher).
     hist, edges = np.histogram(z, bins=np.arange(z.min(), z.max() + 0.02, 0.02))

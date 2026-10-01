@@ -131,8 +131,19 @@ def _overlap(polygons: list[np.ndarray]) -> float:
     return float(np.sum(count > 1) * 0.04 ** 2)
 
 
-def stitch(rooms: dict[str, tuple]) -> StitchResult:
-    """rooms: name -> (layout, openings, cloud). Returns each room's pose in the property frame."""
+HEADING_TOLERANCE_DEG = 20.0
+
+
+def _wrapped_deg(angle: float) -> float:
+    return float(np.degrees(np.abs((angle + np.pi) % (2 * np.pi) - np.pi)))
+
+
+def stitch(rooms: dict[str, tuple], headings: dict[str, float] | None = None) -> StitchResult:
+    """rooms: name -> (layout, openings, cloud). Returns each room's pose in the property frame.
+
+    headings (video tier): each room frame's known rotation into a common frame. A doorway
+    candidate must then turn room B by exactly heading_b - heading_a; with that settled,
+    matching glimpses are a bonus rather than a requirement."""
     doors = {name: _doors(name, layout, openings) for name, (layout, openings, _) in rooms.items()}
     trees = {name: cKDTree(cloud.points) for name, (_, _, cloud) in rooms.items()}
     glimpses = {(d.room, d.index): _glimpse_points(d, rooms[d.room][2], rooms[d.room][0])
@@ -147,12 +158,17 @@ def stitch(rooms: dict[str, tuple]) -> StitchResult:
                     if abs(a.width - b.width) > WIDTH_TOLERANCE_M:
                         continue
                     b_in_a = _place(a, b)
+                    known = headings is not None and name_a in headings and name_b in headings
+                    if known and _wrapped_deg(b_in_a.angle - (headings[name_b] - headings[name_a])) > HEADING_TOLERANCE_DEG:
+                        continue
                     a_in_b = b_in_a.inverse()
                     forward = _inlier_share(glimpses[(a.room, a.index)], a_in_b, trees[name_b])
                     backward = _inlier_share(glimpses[(b.room, b.index)], b_in_a, trees[name_a])
                     shares = [s for s in (forward, backward) if np.isfinite(s)]
                     visual = float(np.mean(shares)) if shares else 0.25
                     width_term = 1.0 - abs(a.width - b.width) / WIDTH_TOLERANCE_M
+                    if known:
+                        visual = 0.5 + 0.5 * visual
                     candidates.append(Candidate(a, b, b_in_a, visual * (0.5 + 0.5 * width_term), (forward, backward)))
     candidates.sort(key=lambda c: -c.score)
 
