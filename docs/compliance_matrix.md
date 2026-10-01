@@ -33,12 +33,12 @@ and held-out visits); it exercises the LiDAR tier, not the photo or video tiers.
 | One command per capture | `cli.py` | `roomscope run <capture> --out <dir>` | done |
 | JSON to the published schema | `schema/floorplan.schema.json` | validated on every run | done |
 | Rendered plan | `render.py` | `plan.png` | done |
-| Openings ≤ 2 cm on ≥ 85% (misses and phantoms count) | `benchmark/evaluate.py` | per-run openings gate | synthetic: passes at every tier with true depth, LiDAR 7–9/9; **real LiDAR: fails** (2 of 30 held-out openings) |
+| Openings ≤ 2 cm on ≥ 85% (misses and phantoms count) | `benchmark/evaluate.py` | per-run openings gate | synthetic: passes at every tier with true depth, LiDAR 7–9/9; **real LiDAR: fails** (2 of 20 held-out openings) |
 | Ceiling ≤ 1.5 cm; repeat spread ≤ 1 cm | `benchmark/evaluate.py` | per-run ceiling gate; repeatability pairs | synthetic passes; **real LiDAR: partial** (held-out ceilings 0.6–4.2 cm, 4 of 10 within 1.5 cm) |
 | Repeatability ≤ 1 cm or 0.5% per wall | `evaluate.repeatability`, `benchmark/run_sim.py`, `benchmark/real/run_real.py` | synthetic: three captures pairwise; real: recordings of the same room | **partial**: synthetic 5–16 of 16 walls; real bathroom 2–3 of 4 (worst 4.9 cm); held-out pairs mostly differ in wall count |
 | Drift accountability + on/off ablation | `geometry/drift.py`, `geometry/planes.py`, `--no-drift-correction` | every LiDAR capture run both ways | done |
 | Photo whole-property stitch: no overlaps, footprint ±8% | `tiers/photo.py::threshold_links`, `geometry/stitch.py` | overlap and footprint per run | done (synthetic); iPhone captures pending |
-| Walls: photo ±8%, video ±3%; calibration scored at every tier | `build.py`, `benchmark/calibrate.py` | scanned-room and synthetic results; held-out interval coverage | partial: on scanned rooms with the depth model, photo meets ±8% on 4 of 8 and video ±3% on 0 of 8 (the depth model's per-scene scale bias, measured at 5.9% across scenes); with true depth 6 of 8 and 5 of 8; held-out interval coverage 88–96% after calibration on synthetic and scanned rooms; **LiDAR on held-out real rooms: 33% median coverage, overconfident** |
+| Walls: photo ±8%, video ±3%; calibration scored at every tier | `build.py`, `benchmark/calibrate.py` | scanned-room and synthetic results; held-out interval coverage | partial: on scanned rooms with the depth model, photo meets ±8% on 4 of 8 and video ±3% on 0 of 8 (the depth model's per-scene scale bias, measured at 5.9% across scenes); with true depth 6 of 8 and 5 of 8; held-out interval coverage 88–96% after calibration on synthetic and scanned rooms; **LiDAR on held-out real rooms: 33% median coverage, overconfident**; photo and video on real iPad frames of the same rooms (off-protocol: walk-arounds, not corner shots or turns): walls 33–94 cm off, intervals wide enough to cover (70–100%) |
 
 ## Parts 3–5
 

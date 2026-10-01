@@ -7,8 +7,8 @@ rooms:
   - 2.7211
   - 1.9827
   - 2.7158
-  - 1.8878
-  floor_area: 5.2584
+  - 1.8877
+  floor_area: 5.2585
   ceiling_height:
   - 2.515
   openings:
@@ -26,10 +26,10 @@ rooms:
     height: 2.0
   survey:
     wall_offsets_m:
-    - -0.0455
-    - 0.0265
-    - 0.0653
-    - 0.0344
+    - -0.0454
+    - 0.0255
+    - 0.0657
+    - 0.034
     strips:
     - 25
     - 18
@@ -38,7 +38,7 @@ rooms:
     strip_spread_m:
     - 0.0037
     - 0.0006
-    - 0.001
+    - 0.0011
     - 0.0015
     walls_measured: 4/4
     length_measured:

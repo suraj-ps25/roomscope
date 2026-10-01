@@ -207,14 +207,17 @@ RECESS_DEPTH_M = 1.0
 RECESS_COVER = 0.6
 MIRROR_MATCH_M = 0.03
 MIRROR_SHARE = 0.5
-MULLION_SHARE = 0.7
+MIRROR_DEPTH_M = 0.3
+MIRROR_MIN_POINTS = 200
+WALL_BELOW_SHARE = 0.3
+THROUGH_BELOW_SHARE = 0.2
 DEBUG = False
 
 
 def _mirror(beyond: np.ndarray, p: np.ndarray, outward: np.ndarray, tree) -> bool:
     """A mirror's laser points lie behind the wall (the reflected path); reflected back
     across the wall plane they land on the room itself. A window's land on nothing."""
-    if len(beyond) < 50:
+    if len(beyond) < MIRROR_MIN_POINTS:
         return False
     if len(beyond) > 3000:
         beyond = beyond[np.random.default_rng(0).choice(len(beyond), 3000, replace=False)]
@@ -256,34 +259,13 @@ def _shadow_mask(clear: np.ndarray, p: np.ndarray, d: np.ndarray, floor_z: float
     return shadow
 
 
-def _split_at_mullions(cols: np.ndarray, rows: np.ndarray, back: np.ndarray) -> list[tuple[np.ndarray, np.ndarray]]:
-    """A window of several panes is one clear region (its mullions are frame, not wall):
-    split it at columns that are frame over most of the region's height, so each pane is
-    measured on its own, as its own opening."""
-    if rows.min() * HEIGHT_CELL_M <= DOOR_SILL_M:
-        return [(cols, rows)]
-    span = range(rows.min(), rows.max() + 1)
-    columns = np.arange(cols.min(), cols.max() + 1)
-    share = np.array([back[c, span].mean() for c in columns])
-    mullion = share > MULLION_SHARE
-    labels, count = ndimage.label(~mullion)
-    if count <= 1:
-        return [(cols, rows)]
-    parts = []
-    for piece in range(1, count + 1):
-        keep = np.isin(cols, columns[labels == piece])
-        if keep.any():
-            parts.append((cols[keep], rows[keep]))
-    return parts
-
-
 def survey_openings(lines: list, lengths: list[float], points: np.ndarray, floor_z: float, stations: np.ndarray,
                     tree) -> tuple[list[dict], list]:
     """Openings are regions of a wall's elevation (1 cm along, 2 cm up) where the laser saw
     no wall face and nothing in front of it, and could have (see _shadow_mask): through the
-    opening, or no return at all (glass). Door if it reaches the floor, with its width the
-    face-to-face run; a window's width is its pane, inside the frame, and a window of
-    several panes is several openings. Widths are medians over the region's middle rows,
+    opening, or no return at all (glass). Door if it reaches the floor or has no wall below
+    it, with its width the face-to-face run; a window's width is inside its outer frame,
+    one opening however many sashes it has. Widths are medians over the region's middle rows,
     a row counting only when both ends are wall face (or, for a pane, frame); if few rows
     are, something stands in front of a jamb and the opening is reported as occluded,
     without a width. A region whose see-through points are a reflection of the room is a
@@ -318,7 +300,7 @@ def survey_openings(lines: list, lengths: list[float], points: np.ndarray, floor
         parts = []
         for region in range(1, count + 1):
             cols, rows = np.nonzero(labels == region)
-            parts += _split_at_mullions(cols, rows, back)
+            parts.append((cols, rows))
         for cols, rows in parts:
             width_cells, height_cells = cols.max() - cols.min() + 1, rows.max() - rows.min() + 1
             if width_cells * ALONG_CELL_M < MIN_OPENING_M or height_cells * HEIGHT_CELL_M < MIN_OPENING_M:
@@ -338,6 +320,14 @@ def survey_openings(lines: list, lengths: list[float], points: np.ndarray, floor
             mid = range(rows.min() + height_cells // 4, rows.max() - height_cells // 4 + 1)
             sill = rows.min() * HEIGHT_CELL_M
             door = sill <= DOOR_SILL_M
+            if not door:
+                # A window has wall below its sill. No wall face below the region, but space
+                # seen through it, is a doorway whose bottom is hidden behind furniture.
+                inner = slice(cols.min() + width_cells // 4, cols.max() - width_cells // 4 + 1)
+                low = slice(int(DOOR_SILL_M / HEIGHT_CELL_M), rows.min())
+                below_face, below_through = face[inner, low], back[inner, low]
+                if below_face.size and below_face.mean() < WALL_BELOW_SHARE and below_through.mean() > THROUGH_BELOW_SHARE:
+                    door, sill = True, 0.0
             widths = []
             for row in mid:
                 inside = cols[rows == row]
@@ -349,13 +339,15 @@ def survey_openings(lines: list, lengths: list[float], points: np.ndarray, floor
                 if door:
                     widths.append((hi - lo + 1) * ALONG_CELL_M)
                 else:
-                    # A window's clear width is inside its frame: the pane, where the
-                    # laser got nothing back from the frame and reveal depth.
-                    pane = ~back[lo:hi + 1, row]
-                    runs, n_runs = ndimage.label(pane)
-                    if n_runs:
-                        widths.append(np.bincount(runs)[1:].max() * ALONG_CELL_M)
-            beyond = (offset > THROUGH_M) & (along >= cols.min() * ALONG_CELL_M) & (along <= (cols.max() + 1) * ALONG_CELL_M) & \
+                    # A window's clear width is inside its outer frame (the protocol's "between
+                    # the jambs, inside the frame"): from the first to the last cell clear of
+                    # frame. A window of several sashes is one opening; its mullions count.
+                    clear_of_frame = np.nonzero(~back[lo:hi + 1, row])[0]
+                    if len(clear_of_frame):
+                        widths.append((clear_of_frame[-1] - clear_of_frame[0] + 1) * ALONG_CELL_M)
+            # Only points well behind the wall: a door leaf or a reveal just behind it,
+            # reflected, lands on the wall itself and would pass for a mirror.
+            beyond = (offset > MIRROR_DEPTH_M) & (along >= cols.min() * ALONG_CELL_M) & (along <= (cols.max() + 1) * ALONG_CELL_M) & \
                 (z >= rows.min() * HEIGHT_CELL_M) & (z <= (rows.max() + 1) * HEIGHT_CELL_M)
             if _mirror(np.column_stack([p + np.outer(along[beyond], d) + np.outer(offset[beyond], outward), z[beyond] + floor_z]),
                        p, outward, tree):

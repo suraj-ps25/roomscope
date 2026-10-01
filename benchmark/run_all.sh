@@ -52,6 +52,11 @@ echo "== depth model scale per scene"
 
 echo "== real iPad LiDAR recordings against laser truth (ARKitScenes; dev and held-out visits)"
 # Fetch: python benchmark/real/fetch_arkitscenes.py <visit ids in benchmark/ground_truth/arkitscenes_*.yaml>
+# Photo and video captures from the same recordings' colour stream (skipped if already made).
+for marker in data/public/arkitscenes/*/visit.txt; do
+  video=$(basename "$(dirname "$marker")")
+  [[ -d data/public/real_captures/${video}_photo || -d data/public/real_captures/${video}_video ]] || $PY benchmark/real/make_image_captures.py "$video"
+done
 $PY benchmark/real/run_real.py --out "$OUT/real"
 
 echo "== interval calibration (split conformal, leave-one-property-out coverage)"

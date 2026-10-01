@@ -181,9 +181,14 @@ before being looked at and run once (one runtime-only change while running them,
 - **Held-out:** in the one large room with laser truth (≈18 m²), walls within a median
   2 cm, worst 4.5–6.5 cm; ceilings 1.2–2.5 cm low. Small irregular rooms (a 5-wall
   bathroom) score 7–25 cm, partly from phantom sliver walls that break the wall
-  sequence; openings mostly miss or are phantoms (2 of 30 within 2 cm); 5–15 false damage
+  sequence; openings mostly miss or are phantoms (2 of 20 within 2 cm); 5–15 false damage
   regions per recording; all three recordings of one visit (27–35 s each) never closed a
   room. Interval coverage on held-out visits is a median 33% against a 90% target.
+- **Photo and video on the same rooms:** fed the recordings' own colour frames (stills
+  chosen as the photo protocol would take them; the whole stream as a clip), the image
+  tiers are far off: worst walls 33–94 cm, ceilings 5–90 cm, rooms read as rectangles.
+  These walk-arounds, mostly tilted up, are not the protocol's corner shots and turns, so
+  this is an off-protocol test; the intervals were wide enough to cover the truth on most.
 
 The full table is in [`benchmark_report.md`](benchmark_report.md).
 
@@ -206,7 +211,7 @@ their two commits on an identical capture with one scorer (`benchmark/fix_loop/`
   solve until its residuals were vectorised (found while running the held-out visits;
   results moved by millimetres).
 - **Our own captures.** Head-to-head and walk-in on iPhone captures are scripted but unrun;
-  the photo and video tiers have no real capture with laser truth.
+  the photo and video tiers have no on-protocol real capture with laser truth.
 - **Monocular scale.** The video ±3% gate is not met. The next lever is a door-height
   prior (interior doors are ~2.03 m, σ ≈ 2%). It wasn't validated here, because the
   scanned rooms' doors are offices' and were rarely detected.

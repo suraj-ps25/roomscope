@@ -4,44 +4,32 @@ source: laser scans in data/public/arkitscenes/laser/471425, plan placed with 88
 rooms:
 - id: living_room
   walls:
-  - 2.5016
-  - 0.6219
-  - 1.4719
-  - 0.6861
-  - 2.649
-  - 3.0785
-  - 2.3967
-  floor_area: 10.1027
+  - 2.5008
+  - 0.6239
+  - 1.4711
+  - 0.6862
+  - 2.6519
+  - 3.0783
+  - 2.3926
+  floor_area: 10.1019
   ceiling_height:
   - 2.5247
   openings:
   - type: window
-    width: 0.64
-    wall: 5
-    offset: 2.32
-    sill: 1.28
-    height: 0.84
-  - type: window
-    width: 0.67
+    width: 1.36
     wall: 6
-    offset: 0.18
-    sill: 1.18
-    height: 0.94
-  - type: window
-    width: 0.68
-    wall: 6
-    offset: 1.04
+    offset: 0.06
     sill: 1.18
     height: 0.96
   survey:
     wall_offsets_m:
-    - 0.0562
-    - 0.048
-    - 0.0772
+    - 0.053
+    - 0.0442
+    - 0.0824
     - null
-    - 0.0453
-    - -0.0267
-    - 0.0138
+    - 0.046
+    - -0.033
+    - 0.0112
     strips:
     - 24
     - 4
@@ -51,12 +39,12 @@ rooms:
     - 29
     - 21
     strip_spread_m:
-    - 0.0014
-    - 0.0027
-    - 0.0014
+    - 0.0013
+    - 0.0001
+    - 0.002
     - .nan
     - 0.0006
-    - 0.0027
+    - 0.0038
     - 0.0006
     walls_measured: 6/7
     length_measured:
@@ -69,8 +57,16 @@ rooms:
     - true
     ceiling_cells: 90
     ceiling_p10_p90_m:
-    - 2.5159
+    - 2.5179
     - 2.5322
-    occluded_openings: []
+    occluded_openings:
+    - type: window
+      width: null
+      wall: 5
+      offset: 2.21
+      sill: 1.28
+      height: 0.84
+      bounded: false
+      span: 0.86
     mirrors: []
 adjacency: []

@@ -23,6 +23,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from roomscope.benchmark.evaluate import evaluate, load_ground_truth, repeatability  # noqa: E402
 
 DATA = ROOT / "data" / "public" / "arkitscenes"
+IMAGE_CAPTURES = ROOT / "data" / "public" / "real_captures"
 
 
 def _measured_walls_only(metrics: dict, truth: dict) -> None:
@@ -46,6 +47,8 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", default=str(ROOT / "runs" / "bench" / "real"))
     parser.add_argument("--visits", nargs="*", help="default: every surveyed visit")
+    parser.add_argument("--tiers", nargs="*", default=["lidar", "photo", "video"],
+                        help="photo and video run on captures made by make_image_captures.py, where present")
     args = parser.parse_args()
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -57,19 +60,28 @@ def main() -> int:
             continue
         truth = load_ground_truth(truth_path)
         plans = {}
-        for video in recordings(visit):
-            run = out / video
+        for video, tier in [(v, t) for v in recordings(visit) for t in args.tiers]:
+            capture = DATA / video if tier == "lidar" else IMAGE_CAPTURES / f"{video}_{tier}"
+            if not capture.exists():
+                continue
+            run = out / (video if tier == "lidar" else f"{video}_{tier}")
             if not (run / "plan.json").exists():
-                subprocess.run([str(ROOT / ".venv" / "bin" / "roomscope"), "run", str(DATA / video), "--out", str(run)],
-                               check=True, stdout=subprocess.DEVNULL)
+                done = subprocess.run([str(ROOT / ".venv" / "bin" / "roomscope"), "run", str(capture), "--out", str(run),
+                                       "--tier", tier], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+                if done.returncode != 0:
+                    rows.append({"visit": visit, "recording": video, "tier": tier, "rooms": 0,
+                                 "notes": [done.stderr.strip().splitlines()[-1] if done.stderr.strip() else "failed"]})
+                    print(json.dumps(rows[-1]), flush=True)
+                    continue
             plan = json.loads((run / "plan.json").read_text())
-            row = {"visit": visit, "recording": video, "rooms": len(plan["rooms"])}
+            row = {"visit": visit, "recording": video, "tier": tier, "rooms": len(plan["rooms"])}
             if plan["rooms"]:
                 metrics = evaluate(plan, truth)
                 _measured_walls_only(metrics, truth)
                 (run / "metrics.json").write_text(json.dumps(metrics, indent=2))
                 row["metrics"] = metrics
-                plans[video] = plan
+                if tier == "lidar":
+                    plans[video] = plan
             else:
                 row["notes"] = plan["capture"]["notes"]
             rows.append(row)

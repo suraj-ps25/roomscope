@@ -165,14 +165,17 @@ def real_section(bench: Path) -> list[str]:
               "scored against laser-scanner truth surveyed with `benchmark/real/laser_truth.py`: the plan names the walls,",
               "the laser scan measures them (faces, corners, floor-to-ceiling height over the whole room, openings with a",
               "mirror test). Every survey was checked against its overlay (`docs/real/`). The same LiDAR tier as for",
-              "Stray Scanner captures, unchanged. **dev** visits were used to find and fix bugs and to fit the LiDAR",
+              "Stray Scanner captures, unchanged. The photo and video tiers run on the same recordings' own colour",
+              "stream (`benchmark/real/make_image_captures.py`): stills chosen as the photo protocol would take them,",
+              "and the whole stream as a clip. These recordings are walk-arounds with the device mostly tilted up, not",
+              "the protocol's corner shots and on-the-spot turns, so the image tiers run off-protocol here. **dev** visits were used to find and fix bugs and to fit the LiDAR",
               "interval calibration; **held-out** visits were chosen by a fixed rule before being looked at (one laser",
               "scan, three or more recordings) and run once, with no change made after. Wall errors are on lengths the",
               "laser measured end to end; rooms are undamaged, so every damage region reported is a false positive.", ""]
     rows = []
     for run in summary["runs"]:
         split = "dev" if run["visit"] in dev else "held-out"
-        label = f"{run['visit']} / {run['recording']} ({split})"
+        label = f"{run['visit']} / {run['recording']} / {run.get('tier', 'lidar')} ({split})"
         metrics = run.get("metrics")
         if not metrics:
             rows.append({"visit / recording": label, "walls median (cm)": "no room", "walls max (cm)": "–",
@@ -186,8 +189,9 @@ def real_section(bench: Path) -> list[str]:
                      "damage regions": metrics["damage"]["false_positives"],
                      "interval coverage": _pct(metrics["calibration"]["coverage"], 0)})
     lines += _table(rows, "visit / recording") + [""]
-    for split in ("dev", "held-out"):
-        chosen = [r["metrics"] for r in summary["runs"] if r.get("metrics") and (r["visit"] in dev) == (split == "dev")]
+    for tier, split in [(t, sp) for t in ("lidar", "photo", "video") for sp in ("dev", "held-out")]:
+        chosen = [r["metrics"] for r in summary["runs"] if r.get("metrics") and (r["visit"] in dev) == (split == "dev")
+                  and r.get("tier", "lidar") == tier]
         if not chosen:
             continue
         walls = [m["walls_measured"]["max_abs_m"] for m in chosen if m["walls_measured"]["max_abs_m"] is not None]
@@ -195,11 +199,11 @@ def real_section(bench: Path) -> list[str]:
         covered = [m["calibration"]["coverage"] for m in chosen if m["calibration"]["coverage"] is not None]
         opening_pass = sum(m["openings"]["passing"] for m in chosen)
         opening_all = sum(m["openings"]["scored"] for m in chosen)
-        lines.append(f"- **{split}** ({len(chosen)} recordings with a room, walls scored on {len(walls)}): worst wall median "
+        lines.append(f"- **{tier}, {split}** ({len(chosen)} recordings with a room, walls scored on {len(walls)}): worst wall median "
                      f"{_cm(float(np.median(walls)), 1) if walls else '–'} cm; "
                      f"ceiling within 1.5 cm on {sum(c <= 0.015 for c in ceilings)}/{len(ceilings)}; openings within 2 cm "
                      f"{opening_pass}/{opening_all}; interval coverage median {_pct(float(np.median(covered)), 0)}"
-                     + (" (in-sample: these runs fitted the calibration)" if split == "dev" else "") + ".")
+                     + (" (in-sample: these runs fitted the calibration)" if split == "dev" and tier == "lidar" else "") + ".")
     lines += ["", "Repeatability (recordings of the same room): walls agreeing within 1 cm or 0.5%.", ""]
     rows = []
     for pair in summary["repeatability"]:
