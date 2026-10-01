@@ -124,3 +124,15 @@ def test_stitch_uses_known_heading_to_pick_the_right_door():
     assert result.links[0].b.index == 1
     placed = result.transforms["b"].apply(b.polygon)
     assert abs(placed[:, 0].min() - 4.15) < 0.05
+
+
+def test_umeyama_recovers_similarity():
+    from roomscope.geometry.registration import _umeyama
+    rng = np.random.default_rng(3)
+    source = rng.normal(size=(50, 3)) * 2
+    R = Rotation.from_rotvec([0.3, -0.2, 0.9]).as_matrix()
+    target = 0.93 * source @ R.T + np.array([1.0, -2.0, 0.5])
+    s, R_est, t = _umeyama(source, target)
+    assert abs(s - 0.93) < 1e-9
+    assert np.allclose(R_est, R, atol=1e-9)
+    assert np.allclose(t, [1.0, -2.0, 0.5], atol=1e-9)
