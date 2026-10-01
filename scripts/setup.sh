@@ -10,6 +10,7 @@ cd "$(dirname "$0")/.."
 ROOT=$(pwd)
 MAPANYTHING_COMMIT=3d10cf7
 MOGE_COMMIT=74fbce0
+UTILS3D_COMMIT=ca3e9ac015ab3473a37ea60f2f55063696638416
 
 echo "== 1. system tools"
 command -v ffmpeg >/dev/null || {
@@ -42,7 +43,7 @@ git -C third_party/MoGe checkout -q "$MOGE_COMMIT"
 # MoGe's newest release pulls a Linux-only GPU kernel (triton) that MoGe-2 inference
 # never touches; install it without dependencies and add the one it does need.
 uv pip install --python .venv/bin/python --no-deps -e third_party/MoGe
-uv pip install --python .venv/bin/python "utils3d @ git+https://github.com/EasternJournalist/utils3d.git"
+uv pip install --python .venv/bin/python "utils3d @ git+https://github.com/EasternJournalist/utils3d.git@$UTILS3D_COMMIT"
 
 echo "   downloading weights (MoGe-2 ~1.3 GB, MapAnything ~4.9 GB + DINOv2)"
 .venv/bin/python - <<'EOF'
