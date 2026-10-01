@@ -214,6 +214,26 @@ def real_section(bench: Path) -> list[str]:
     return lines + _table(rows, "pair") + [""]
 
 
+def samples_section(bench: Path) -> list[str]:
+    plans = sorted((bench / "samples").glob("*/plan.json"))
+    lines = ["## Assessors' sample captures", "",
+             "The three Stray Scanner recordings sent with the brief (`data/sample/`). They come without measurements, so",
+             "nothing here is scored: this is what the pipeline makes of them, and how long it takes, cold, on an M2.", ""]
+    if not plans:
+        return lines + ["(not run: unzip the samples into `data/sample/`)", ""]
+    rows = []
+    for path in plans:
+        plan = json.loads(path.read_text())
+        timing = plan.get("timing_s", {})
+        unseen = sum(any("ceiling not observed" in n for n in r["quality"]["notes"]) for r in plan["rooms"])
+        rows.append({"sample": path.parent.name, "recording (s)": f"{plan['capture'].get('frames_used', 0) / 6:.0f}",
+                     "rooms": len(plan["rooms"]), "connections": len(plan["adjacency"]),
+                     "footprint (m²)": f"{plan['property']['footprint_area']['value']:.1f}",
+                     "ceiling not seen in": f"{unseen} rooms", "run (s)": f"{timing.get('total', 0):.0f}",
+                     "of which damage (s)": f"{timing.get('damage', 0):.0f}"})
+    return lines + _table(rows, "sample") + [""]
+
+
 def calibration_section(bench: Path) -> list[str]:
     lines = ["## Interval calibration", "",
              "Propagated intervals (fit uncertainty through the geometry, plus the tier's scale budget) are scaled per tier",
@@ -252,7 +272,7 @@ def main() -> int:
              "of real rooms scored against laser scans, on dev and held-out visits. Gates are the brief's: openings ≤ 2 cm on",
              "≥ 85% (misses and phantoms count), ceiling ≤ 1.5 cm, walls ±3% (video) / ±8% (photo), footprint ±8%.", ""]
     lines += (lidar_section(bench) + flat_section(bench) + replica_section(bench) + depth_section(bench)
-              + damage_section(bench) + real_section(bench) + calibration_section(bench))
+              + damage_section(bench) + real_section(bench) + samples_section(bench) + calibration_section(bench))
     Path(args.out).write_text("\n".join(lines) + "\n")
     print(f"wrote {args.out}")
     return 0
