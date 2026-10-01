@@ -190,12 +190,13 @@ def real_section(bench: Path) -> list[str]:
         chosen = [r["metrics"] for r in summary["runs"] if r.get("metrics") and (r["visit"] in dev) == (split == "dev")]
         if not chosen:
             continue
-        walls = [m["walls_measured"]["max_abs_m"] for m in chosen]
+        walls = [m["walls_measured"]["max_abs_m"] for m in chosen if m["walls_measured"]["max_abs_m"] is not None]
         ceilings = [abs(v) for m in chosen for v in m["ceiling"]["per_room_m"].values()]
         covered = [m["calibration"]["coverage"] for m in chosen if m["calibration"]["coverage"] is not None]
         opening_pass = sum(m["openings"]["passing"] for m in chosen)
         opening_all = sum(m["openings"]["scored"] for m in chosen)
-        lines.append(f"- **{split}** ({len(chosen)} recordings with a room): worst wall median {_cm(float(np.median(walls)), 1)} cm; "
+        lines.append(f"- **{split}** ({len(chosen)} recordings with a room, walls scored on {len(walls)}): worst wall median "
+                     f"{_cm(float(np.median(walls)), 1) if walls else '–'} cm; "
                      f"ceiling within 1.5 cm on {sum(c <= 0.015 for c in ceilings)}/{len(ceilings)}; openings within 2 cm "
                      f"{opening_pass}/{opening_all}; interval coverage median {_pct(float(np.median(covered)), 0)}"
                      + (" (in-sample: these runs fitted the calibration)" if split == "dev" else "") + ".")

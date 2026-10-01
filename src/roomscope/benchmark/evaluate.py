@@ -124,9 +124,21 @@ def _score_room(pred: dict, truth: dict) -> RoomScore:
     return score
 
 
+def _unmeasured(o: dict, truth: dict, shift: int | None, wall_ids: list[str]) -> bool:
+    """A predicted opening where the truth survey found an opening it could not measure (a
+    laser survey with something in front of a jamb) is neither right nor a phantom."""
+    if shift is None or o["wall_id"] not in wall_ids:
+        return False
+    wall = (wall_ids.index(o["wall_id"]) - shift) % len(truth["walls"])
+    u0 = o["offset"]["value"]
+    u1 = u0 + o["width"]["value"]
+    return any(g["wall"] == wall and u0 < g["offset"] + g.get("span", 0) and g["offset"] < u1
+               for g in truth.get("survey", {}).get("occluded_openings", []))
+
+
 def _score_openings(pred: dict, truth: dict, shift: int | None, wall_ids: list[str]) -> list[dict]:
     gt_openings = truth.get("openings", [])
-    pr_openings = pred["openings"]
+    pr_openings = [o for o in pred["openings"] if not _unmeasured(o, truth, shift, wall_ids)]
     n = len(truth["walls"])
     cost = np.full((len(pr_openings), len(gt_openings)), 10.0)
     for i, o in enumerate(pr_openings):

@@ -61,8 +61,10 @@ def _layers(points: np.ndarray) -> tuple[float, float]:
     key = (cells[:, 0] * 1_000_003 + cells[:, 1]) * 4096 + which
     unique = np.unique(key)
     area = np.bincount(unique % 4096, minlength=len(bins) + 1) * 0.0025
-    wide = np.nonzero(area >= 0.3 * area.max())[0]
-    return _layer(z, bins[wide[0] - 1] + 0.005), _layer(z, bins[wide[-1] - 1] + 0.005)
+    # The floor is often mostly hidden by furniture and rugs; the ceiling rarely is.
+    floor = np.nonzero(area >= 0.1 * area.max())[0][0]
+    ceiling = np.nonzero(area >= 0.3 * area.max())[0][-1]
+    return _layer(z, bins[floor - 1] + 0.005), _layer(z, bins[ceiling - 1] + 0.005)
 
 
 def level(points: np.ndarray, stations: np.ndarray) -> tuple[np.ndarray, np.ndarray, float, float]:
@@ -366,7 +368,8 @@ def survey_openings(lines: list, lengths: list[float], points: np.ndarray, floor
             found.append({"type": "door" if door else "window",
                           "width": round(float(np.median(widths)), 3) if bounded else None, "wall": k,
                           "offset": round(float(cols.min() * ALONG_CELL_M), 3), "sill": round(float(sill), 3),
-                          "height": round(float(height_cells * HEIGHT_CELL_M), 3), "bounded": bool(bounded)})
+                          "height": round(float(height_cells * HEIGHT_CELL_M), 3), "bounded": bool(bounded),
+                          "span": round(float(width_cells * ALONG_CELL_M), 3)})
     return found, elevations, mirrors
 
 
@@ -420,7 +423,7 @@ def survey_room(room: dict, yaw: float, shift: np.ndarray, bands: list[np.ndarra
     openings, elevations, mirrors = survey_openings(edges, lengths, points, floor_z, stations, tree)
     return {"id": room["id"], "walls": [round(v, 4) for v in lengths], "floor_area": round(area, 4),
             "ceiling_height": [round(v, 4) for v in shots],
-            "openings": [{k: v for k, v in o.items() if k != "bounded"} for o in openings if o["bounded"]],
+            "openings": [{k: v for k, v in o.items() if k not in ("bounded", "span")} for o in openings if o["bounded"]],
             "survey": {"wall_offsets_m": [None if f["offset"] is None else round(f["offset"], 4) for f in faces],
                        "strips": [f["strips"] for f in faces],
                        "strip_spread_m": [round(f.get("spread", float("nan")), 4) for f in faces],

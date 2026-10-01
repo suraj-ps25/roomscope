@@ -2,7 +2,7 @@ property: arkitscenes visit 471428
 source: laser scans in data/public/arkitscenes/laser/471428, plan placed with 83%
   of wall samples within 5 cm
 rooms:
-- id: room_1
+- id: bathroom
   walls:
   - 2.7211
   - 1.9827
