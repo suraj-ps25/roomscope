@@ -238,6 +238,14 @@ Per-recording tables: `real-openings-*` in [`results/`](../benchmark/fix_loop/re
 Better than predicted. The gate still fails: it asks for every room, and two held-out rooms
 remain at −1.6 and −2.7 cm.
 
+**A regression it exposed:** the dev living room (47429922) now splits into a 1.3 m²
+alcove and the rest (median wall error 6.6 → 28.7 cm against laser truth). Under the
+ceiling a bulkhead runs across the alcove; at the new scale its face drops from the
+ceiling just past the 15 cm that makes a barrier, and furniture on the same line passes
+for wall below it. A test requiring wall below over half the barrier's length fixes this
+room but splits or merges two of the bathroom recordings, so it was not shipped. The
+segmentation decides bulkhead against header on thresholds, and this room sits on one.
+
 ### Earlier fixes (in the history, found the same way)
 
 These predate the regeneration script, so their before/after is recorded in the commit
