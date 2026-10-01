@@ -269,10 +269,45 @@ def _extract(layout: RoomLayout, wall: _Wall, room_tree: cKDTree,
                 v0 = wall.floor_z
         kind = "opening" if touches_floor and v1 > wall.ceiling_z - 0.05 else ("door" if touches_floor else "window")
         opening = _refine(layout, wall, kind, u0, u1, v0, v1, tol)
+        if opening.kind == "window" and opening.v0 - wall.floor_z < DOOR_SILL_MAX_M:
+            # The class was decided on the vote region; a sill the reveal puts at floor
+            # level is a door whose bottom was seen only at its edge.
+            opening.kind, opening.v0, opening.sigma_v0 = "door", wall.floor_z, 0.003
         observed = float((total[iu0:iu1, iv0:iv1] >= tol.min_votes).mean())
         opening.confidence = float(np.clip(observed * min(1.0, fill / 0.8), 0, 1))
         found.append(opening)
-    return found, notes
+    merged, merge_notes = _merge_sashes([o for o in found if o.kind != "mirror"], wall)
+    return [o for o in found if o.kind == "mirror"] + merged, notes + merge_notes
+
+
+SASH_GAP_M = 0.2
+
+
+def _merge_sashes(found: list[Opening], wall: _Wall) -> tuple[list[Opening], list[str]]:
+    """Openings side by side on one wall, at most SASH_GAP_M apart and overlapping in
+    height, are one opening: the frame member between two sashes breaks the run of open
+    votes, and a sash that can be seen through to the floor reads as a door beside the
+    window it belongs to. Measured outer edge to outer edge; a window if any part has a sill."""
+    found = sorted(found, key=lambda o: o.u0)
+    out, notes = [], []
+    for o in found:
+        last = out[-1] if out else None
+        if last is not None and o.u0 - last.u1 <= SASH_GAP_M and min(o.v1, last.v1) > max(o.v0, last.v0):
+            kinds = {last.kind, o.kind}
+            kind = "window" if "window" in kinds else last.kind
+            window_parts = [x for x in (last, o) if x.kind == "window"]
+            v0 = min(x.v0 for x in window_parts) if window_parts else min(last.v0, o.v0)
+            sigma_v0 = (window_parts[0].sigma_v0 if window_parts else last.sigma_v0)
+            right = o if o.u1 >= last.u1 else last
+            merged = Opening(last.room, last.wall, kind, last.u0, right.u1, v0, max(last.v1, o.v1),
+                             last.sigma_u0, right.sigma_u1, sigma_v0, max(last.sigma_v1, o.sigma_v1),
+                             min(last.confidence, o.confidence), last.jambs_found + o.jambs_found)
+            notes.append(f"wall {wall.index}: openings {last.width:.2f} and {o.width:.2f} m, {o.u0 - last.u1:.2f} m "
+                         f"apart, are one {kind} ({merged.width:.2f} m)")
+            out[-1] = merged
+        else:
+            out.append(o)
+    return out, notes
 
 
 def _is_mirror(points: np.ndarray, wall: _Wall, room_tree: cKDTree) -> bool:
