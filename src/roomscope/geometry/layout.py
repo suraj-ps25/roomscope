@@ -35,8 +35,6 @@ class WallLine:
     sigma: float
     points: int
     spread: float
-    centre: np.ndarray | None = None
-    angle_sigma: float = float("inf")
 
     @property
     def direction(self) -> np.ndarray:
@@ -163,57 +161,7 @@ def fit_wall(points: Cloud, inward: np.ndarray, anchor: np.ndarray, span: tuple[
     good = weights > 0
     spread = float(1.4826 * np.median(np.abs(residual[good])))
     effective = min(int(good.sum()), EFFECTIVE_POINTS_CAP)
-    centre = xy[good].mean(axis=0)
-    return WallLine(normal, offset, spread / np.sqrt(effective), int(good.sum()), spread, centre,
-                    _angle_sigma(xy[good], normal, centre, spread))
-
-
-ANGLE_CORRELATION_M = 0.1
-ANGLE_SIGMA_FLOOR = np.radians(0.05)
-SQUARE_PRIOR_DEG = 0.5
-SQUARE_REACH_DEG = 5.0
-
-
-def _angle_sigma(xy: np.ndarray, normal: np.ndarray, centre: np.ndarray, spread: float) -> float:
-    """Direction uncertainty of a fitted wall line. Depth error is correlated along a wall
-    (a frame's error is smooth over tens of centimetres), so the line has about one
-    independent sample per ANGLE_CORRELATION_M of wall actually observed, not one per
-    point: a wall seen over 1 m either side of a door is far less sure of its direction
-    than its thousands of points suggest."""
-    along = (xy - centre) @ np.array([normal[1], -normal[0]])
-    observed = len(np.unique(np.floor(along / ANGLE_CORRELATION_M)))
-    variance = float(np.mean(along ** 2))
-    return max(spread / np.sqrt(max(observed, 2) * max(variance, 1e-4)), ANGLE_SIGMA_FLOOR)
-
-
-def square_prior(lines: list[WallLine]) -> list[WallLine]:
-    """Pull each wall's direction towards the room's square axes by its own uncertainty.
-    Rooms are close to square (a fraction of a degree out is common, a degree is rare), so a
-    wall whose direction is poorly measured leans on its well-measured neighbours, and a
-    wall measured well keeps its own angle. Walls far off the axes are left alone."""
-    fitted = [l for l in lines if l.centre is not None and np.isfinite(l.angle_sigma)]
-    if len(fitted) < 3:
-        return lines
-    angles = np.array([np.arctan2(l.normal[1], l.normal[0]) for l in fitted])
-    weights = np.array([1.0 / l.angle_sigma ** 2 for l in fitted])
-    axis = np.angle(np.sum(weights * np.exp(4j * angles))) / 4
-    prior = 1.0 / np.radians(SQUARE_PRIOR_DEG) ** 2
-    out = []
-    for line in lines:
-        if line.centre is None or not np.isfinite(line.angle_sigma):
-            out.append(line)
-            continue
-        angle = np.arctan2(line.normal[1], line.normal[0])
-        deviation = (angle - axis + np.pi / 4) % (np.pi / 2) - np.pi / 4
-        if abs(deviation) > np.radians(SQUARE_REACH_DEG):
-            out.append(line)
-            continue
-        own = 1.0 / line.angle_sigma ** 2
-        angle -= deviation * prior / (own + prior)
-        normal = np.array([np.cos(angle), np.sin(angle)])
-        sigma = 1.0 / np.sqrt(own + prior)
-        out.append(WallLine(normal, float(normal @ line.centre), line.sigma, line.points, line.spread, line.centre, sigma))
-    return out
+    return WallLine(normal, offset, spread / np.sqrt(effective), int(good.sum()), spread)
 
 
 def _level(values: np.ndarray) -> tuple[float, float]:
@@ -283,7 +231,6 @@ def room_layout(region: RoomRegion, cloud: Cloud, tol: Tolerances = LIDAR_TOL) -
         notes.append(f"dropped an edge with {coverage[worst]:.0%} wall coverage under the ceiling (mask artefact)")
         lines.pop(worst)
 
-    lines = square_prior(lines)
     polygon = _corners(lines)
     if polygon is None or len(polygon) < 3 or not _plausible(polygon, region.area):
         # Never ship a self-intersecting or implausible room: fall back to the free-space
