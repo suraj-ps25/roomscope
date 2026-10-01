@@ -1,0 +1,76 @@
+property: arkitscenes visit 471425
+source: laser scans in data/public/arkitscenes/laser/471425, plan placed with 88%
+  of wall samples within 5 cm
+rooms:
+- id: room_1
+  walls:
+  - 2.5016
+  - 0.6219
+  - 1.4719
+  - 0.6861
+  - 2.649
+  - 3.0785
+  - 2.3967
+  floor_area: 10.1027
+  ceiling_height:
+  - 2.5247
+  openings:
+  - type: window
+    width: 0.64
+    wall: 5
+    offset: 2.32
+    sill: 1.28
+    height: 0.84
+  - type: window
+    width: 0.67
+    wall: 6
+    offset: 0.18
+    sill: 1.18
+    height: 0.94
+  - type: window
+    width: 0.68
+    wall: 6
+    offset: 1.04
+    sill: 1.18
+    height: 0.96
+  survey:
+    wall_offsets_m:
+    - 0.0562
+    - 0.048
+    - 0.0772
+    - null
+    - 0.0453
+    - -0.0267
+    - 0.0138
+    strips:
+    - 24
+    - 4
+    - 14
+    - 1
+    - 22
+    - 29
+    - 21
+    strip_spread_m:
+    - 0.0014
+    - 0.0027
+    - 0.0014
+    - .nan
+    - 0.0006
+    - 0.0027
+    - 0.0006
+    walls_measured: 6/7
+    length_measured:
+    - true
+    - true
+    - false
+    - false
+    - false
+    - true
+    - true
+    ceiling_cells: 90
+    ceiling_p10_p90_m:
+    - 2.5159
+    - 2.5322
+    occluded_openings: []
+    mirrors: []
+adjacency: []
