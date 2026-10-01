@@ -139,6 +139,18 @@ def _calibrate(args: argparse.Namespace) -> int:
 
 
 def _sim(args: argparse.Namespace) -> int:
+    if str(args.scene).endswith(".ply"):
+        # A scanned room (e.g. Replica): photo and video protocol captures, truth from the mesh.
+        from pathlib import Path
+
+        from .sim import mesh_capture
+        if args.tier not in ("photo", "video"):
+            print("mesh scenes give photo and video captures", file=sys.stderr)
+            return 2
+        writer = mesh_capture.write_photos if args.tier == "photo" else mesh_capture.write_video
+        truth = writer(Path(args.scene), Path(args.out), seed=args.seed)
+        print(f"wrote {args.tier} capture of {truth['id']} to {args.out}")
+        return 0
     from pathlib import Path
 
     from .sim import writers
