@@ -165,59 +165,79 @@ paint is deliberately not reported: it is indistinguishable from lighting gradie
 ARKitScenes ships iPad Pro recordings (LiDAR depth, ARKit poses, colour) with Faro laser
 scans of the same rooms. `benchmark/real/laser_truth.py` surveys a scan as the protocol
 asks a person to: the plan names the walls; the scan gives their faces, corners,
-room-wide floor-to-ceiling height and openings (pane widths, mullions split, laser
-shadows and recesses rejected, mirrors identified by reflecting the see-through points).
-Every survey was checked against its overlay (`docs/real/`). Two visits were **dev**
-(bugs found and fixed, LiDAR intervals fitted); three were **held out**, chosen by rule
-before being looked at and run once (one runtime-only change while running them, §10).
+room-wide floor-to-ceiling height and openings (doors face to face, windows inside the
+frame, laser shadows and recesses rejected, mirrors identified by reflecting the
+see-through points). Every survey was checked against its overlay (`docs/real/`). Two
+visits were **dev**: bugs found and fixed, LiDAR intervals and depth scale fitted. Three
+were **held out**, chosen by rule before being looked at.
 
-- **Found on dev:** a 10 cm ceiling step was traced as a wall and cut a bathroom in two
-  (1.94 m for 2.72 m); undamaged rooms reported up to 59 damage regions; and the damage
-  scorer was wrong: the synthetic "crack found" was a door-jamb edge on another wall.
-- **What the iPad's depth itself carries:** registered to the laser, the recordings' own
-  clouds are ~1% small and ~1° out of square on a room the laser says is square to 0.2°.
-  Walls come out 1–2.5% short whatever the layout does, so LiDAR intervals are now
-  calibrated on real recordings (walls ×4.2), not on the simulator.
-- **Held-out:** in the one large room with laser truth (≈18 m²), walls within a median
-  2 cm, worst 4.5–6.5 cm; ceilings 1.2–2.5 cm low. Small irregular rooms (a 5-wall
-  bathroom) score 7–25 cm, partly from phantom sliver walls that break the wall
-  sequence; openings mostly miss or are phantoms (2 of 20 within 2 cm); 5–15 false damage
-  regions per recording; all three recordings of one visit (27–35 s each) never closed a
-  room. Interval coverage on held-out visits is a median 33% against a 90% target.
-- **Photo and video on the same rooms:** fed the recordings' own colour frames (stills
-  chosen as the photo protocol would take them; the whole stream as a clip), the image
-  tiers are far off: worst walls 33–94 cm, ceilings 5–90 cm, rooms read as rectangles.
-  These walk-arounds, mostly tilted up, are not the protocol's corner shots and turns, so
-  this is an off-protocol test; the intervals were wide enough to cover the truth on most.
+- **Found on dev:**
+  - a 10 cm ceiling step was traced as a wall and cut a bathroom in two (1.94 m for 2.72 m);
+  - undamaged rooms reported up to 59 damage regions;
+  - the damage scorer was wrong: the synthetic "crack found" was a door-jamb edge on
+    another wall.
+- **The iPad's depth reads 0.88% short.** Registered on the laser by similarity ICP, every
+  well-registered dev recording needs a scale of 1.0087–1.0106, and every real ceiling was
+  low. The device calibration that corrects it (§9) took held-out ceilings within 1.5 cm
+  from 4 to 8 of 10. It is applied to that device only: a phone never measured is not
+  corrected.
+- **Held-out:**
+  - the large room (≈18 m²): walls a median 2.4–3.6 cm off, worst 5.4 cm; ceilings within
+    0.7 cm;
+  - a small 5-wall room: worst walls 16–22 cm, partly from sliver walls that break the
+    wall sequence;
+  - openings: 6 of 16 within 2 cm;
+  - 7–11 false damage regions per recording;
+  - one visit's three recordings (27–35 s each) never closed a room;
+  - interval coverage: median 71% against a 90% target.
+- **Photo and video on the same rooms.** Fed the recordings' own colour frames, the image
+  tiers are far off: worst walls 33–94 cm. These walk-arounds, mostly tilted up, are not
+  the protocol's corner shots and turns, so this is an off-protocol test. The intervals
+  were wide enough to cover the truth on most.
+- **The assessors' sample captures** (Stray Scanner, no truth) exposed two assumptions:
+  - Two of three were filmed with the phone held level, and segmentation needed the
+    ceiling: one gave no room. Walls are now traced above furniture height and doorway
+    gaps closed when no ceiling was seen, and the ceiling is then a stated prior with a
+    wide interval. The flat comes out as 8 rooms either way.
+  - Decoding the video took 39 of 43 minutes on a 3.5-minute scan. One sequential decode
+    makes it 8 minutes.
 
-The full table is in [`benchmark_report.md`](benchmark_report.md).
+The full tables are in [`benchmark_report.md`](benchmark_report.md).
 
 ## 9. How it was built: the fix loop
 
-Every fix began as a failing number, was isolated by an ablation or a stage-level
-diagnostic against truth, landed as one commit with its before/after in the message, and
-was followed by a re-run of every tier the change touched. One such re-run caught a fix
-for the video tier regressing LiDAR openings (8/9 → 7/9); its cause, a margin defined as
-a share of a per-tier tolerance, was fixed the same day. Ten entries regenerate from
-their two commits on an identical capture with one scorer (`benchmark/fix_loop/`).
+Every fix began as a failing number and was isolated by an ablation or a stage-level
+diagnostic against truth. It landed as one commit with its before and after, and was
+followed by a re-run of every tier it touched. That re-run caught three regressions: a
+video fix that cost LiDAR openings, a square-room prior that cost a synthetic window, and
+the declared fix's first version, which lost a door.
+
+The fix the brief scores is **declared in advance**
+([`fix_declaration.md`](fix_declaration.md)).
+- **The worst gate:** real openings, 2 of 29 within 2 cm.
+- **Two evidenced causes:** multi-sash windows split into several openings, and a
+  floor-level sill classed as a window.
+- **The prediction:** no new passes; detection failures 18 → 14.
+- **The result:** every predicted number was met, after one correction (the plane
+  adjustment uses openings as landmarks, and the fix must not change those).
+- **The gate still fails:** widths stay ±5 cm at 256×192 depth, and some doors were never
+  filmed.
+
+A second fix, the depth-scale calibration, did better than expected (above). Fifteen
+entries regenerate from their two commits on an identical capture with one scorer
+(`benchmark/fix_loop/`).
 
 ## 10. Limitations and next steps
 
-- **Real LiDAR accuracy.** On held-out real rooms the LiDAR tier misses the brief's
-  gates: ceilings 1–4 cm, openings poor, intervals overconfident (33% coverage). Next:
-  openings on real depth (glass gives no "no return" in densified depth, so the vote
-  model needs a new cue), sliver walls in small rooms, and the depth's own skew.
-- **Long recordings** were slow: a 7-minute recording sat 20+ minutes in the pose-graph
-  solve until its residuals were vectorised (found while running the held-out visits;
-  results moved by millimetres).
-- **Our own captures.** Head-to-head and walk-in on iPhone captures are scripted but unrun;
-  the photo and video tiers have no on-protocol real capture with laser truth.
-- **Monocular scale.** The video ±3% gate is not met. The next lever is a door-height
-  prior (interior doors are ~2.03 m, σ ≈ 2%). It wasn't validated here, because the
-  scanned rooms' doors are offices' and were rarely detected.
-- **Photo/video layouts are rectangles.** L-shaped rooms and rooms with a deep jog read as
-  their bounding rectangle.
-- **LiDAR repeatability** is limited by the sensor's per-capture depth scale bias
-  (simulated at 0.2%): two captures of one wall can differ by more than 0.5%.
-- **Damage** recall is validated on synthetic staging only (3/3 at the staged places);
-  on real undamaged rooms it still reports 2–15 false regions per recording.
+- **Real openings** stay far from the 85% gate (6 of 16 held-out within 2 cm). Next: jamb
+  edges from the colour image, not 256×192 depth.
+- **Segmentation sits on thresholds** where bulkheads, ceiling steps and headers look
+  alike. A dev room split at a bulkhead after the depth-scale change. Small rooms sprout
+  sliver walls.
+- **Our own captures.** The head-to-head needs a phone and was not run. The photo and video
+  tiers have no on-protocol real capture with laser truth.
+- **Monocular scale.** The video ±3% gate is not met. The next lever is a door-height prior
+  (interior doors are ~2.03 m, σ ≈ 2%).
+- **Photo/video layouts are rectangles.** L-shaped rooms read as their bounding rectangle.
+- **Damage** recall is validated on synthetic staging only (3/3 at the staged places).
+  Real undamaged rooms still report 2–11 false regions.
