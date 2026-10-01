@@ -94,7 +94,7 @@ def main() -> int:
         rows.append({"scene": capture.name.replace("_video", ""), "source": "Replica render, true depth", "views": len(r),
                      "median_ratio": float(np.median(r)), "view_spread": _spread(r)})
         print(json.dumps(rows[-1]), flush=True)
-    for sequence in sorted(p for p in Path(args.arkitscenes).iterdir() if p.is_dir()):
+    for sequence in sorted(p for p in Path(args.arkitscenes).iterdir() if (p / "lowres_wide.traj").exists()):
         r = arkitscenes(sequence)
         rows.append({"scene": f"ARKitScenes {sequence.name}", "source": "real iPad frames, LiDAR depth", "views": len(r),
                      "median_ratio": float(np.median(r)), "view_spread": _spread(r)})
