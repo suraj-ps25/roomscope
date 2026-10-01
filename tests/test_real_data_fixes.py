@@ -35,3 +35,14 @@ def test_damage_counts_only_at_the_staged_place():
     assert _at_staged_place(region_there, {"id": "room_3/w2"}, staged, 1, 4)
     assert not _at_staged_place(region_elsewhere, {"id": "room_3/w2"}, staged, 1, 4)
     assert not _at_staged_place(region_there, {"id": "room_3/w3"}, staged, 1, 4)
+
+
+def test_doorway_gap_between_collinear_traces_is_bridged():
+    from roomscope.geometry.rooms import _doorway_bridges
+    # One wall x = 0, traced from y = 0 to 2 and from y = 2.9 to 5: a 0.9 m doorway between.
+    left, right = WallSegment(0.0, 0.0, 0.0, 2.0), WallSegment(0.0, 0.0, 2.9, 5.0)
+    bridges = _doorway_bridges([left, right])
+    assert len(bridges) == 1 and abs(bridges[0].start - 2.0) < 1e-9 and abs(bridges[0].end - 2.9) < 1e-9
+    # A 2 m gap is open space, not a doorway; a parallel wall elsewhere is not on the line.
+    assert not _doorway_bridges([left, WallSegment(0.0, 0.0, 4.0, 5.0)])
+    assert not _doorway_bridges([left, WallSegment(0.0, 1.5, 2.9, 5.0)])
