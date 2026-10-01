@@ -46,3 +46,15 @@ def test_doorway_gap_between_collinear_traces_is_bridged():
     # A 2 m gap is open space, not a doorway; a parallel wall elsewhere is not on the line.
     assert not _doorway_bridges([left, WallSegment(0.0, 0.0, 4.0, 5.0)])
     assert not _doorway_bridges([left, WallSegment(0.0, 1.5, 2.9, 5.0)])
+
+
+def test_ceiling_is_the_layer_over_most_of_the_room():
+    from roomscope.geometry.layout import _ceiling_level
+    rng = np.random.default_rng(0)
+    # A 4 x 3 m ceiling at 3.05 m, lowered to 2.45 m over a 0.8 m strip (denser, fewer cells),
+    # plus the bottoms of wall cabinets at 2.2 m.
+    main = np.c_[rng.uniform(0, 4, 6000), rng.uniform(0, 3, 6000), 3.05 + rng.normal(0, 0.003, 6000)]
+    lowered = np.c_[rng.uniform(0, 4, 7000), rng.uniform(0, 0.8, 7000), 2.45 + rng.normal(0, 0.003, 7000)]
+    cabinets = np.c_[rng.uniform(0, 1, 9000), rng.uniform(0, 0.3, 9000), 2.2 + rng.normal(0, 0.003, 9000)]
+    level, _ = _ceiling_level(np.vstack([main, lowered, cabinets]))
+    assert abs(level - 3.05) < 0.01
