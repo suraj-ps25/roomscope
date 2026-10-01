@@ -75,3 +75,17 @@
   flags: [--oracle-depth]
   before: bdb7174
   after: a1a7bf5
+
+- id: lidar-one-sided-door
+  title: A door seen from one side only broke adjacency
+  symptom: >-
+    LiDAR, a fourth independent capture of the flat: the hallway side of the bedroom door
+    went undetected while the bedroom side measured it (0.851 m), so adjacency failed.
+  cause: >-
+    Adjacency needed the door detected on both faces of the wall; the hallway saw that
+    doorway only obliquely and briefly.
+  fix: an unpaired door is carried through its wall when another room's wall faces it a wall-thickness away
+  capture: data/captures/sim_flat_a_lidar
+  flags: []
+  before: 9805f2f
+  after: a3d59a8
