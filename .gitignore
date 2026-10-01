@@ -36,3 +36,4 @@ outputs/
 # Vendored model code (fetched by scripts/setup.sh at a pinned commit)
 third_party/
 data/public/
+data/sample/
