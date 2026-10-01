@@ -22,6 +22,7 @@ from ..geometry.openings import detect_openings, match_doors
 from ..geometry.planes import LIDAR_PLANES, PlaneSettings, plane_adjust
 from ..geometry.rooms import align, segment_rooms
 from ..geometry.tolerances import LIDAR_TOL, Tolerances
+from ..log import log
 
 KEYFRAME_FPS = 6.0
 PLANE_ROUNDS = 3
@@ -78,9 +79,11 @@ def run_lidar(bundle: CaptureBundle, options: LidarOptions | None = None) -> Lid
     clock = _Clock()
     frames = select_keyframes(bundle.frames, options.keyframe_fps) if options.select_keyframes else list(bundle.frames)
     clock.lap("ingest")
+    log("ingest", f"{len(frames)} frames")
 
     drift = correct_drift(frames, enabled=options.drift_correction, settings=options.drift)
     clock.lap("drift")
+    log("drift", drift.notes[-1] if drift.notes else "done")
 
     cloud = fuse(frames, drift.poses, voxel=MEASURE_VOXEL, stride=2, min_confidence=options.measure_confidence)
     alignment = align(cloud)
@@ -88,6 +91,7 @@ def run_lidar(bundle: CaptureBundle, options: LidarOptions | None = None) -> Lid
     poses = {k: alignment.pose(v) for k, v in drift.poses.items()}
     regions, segment_notes = segment_rooms(plan_cloud, frames, poses, min_frames_inside=options.tol.min_room_frames)
     clock.lap("reconstruct")
+    log("rooms", f"{len(regions)} rooms segmented")
 
     drift_notes = list(drift.notes)
     if options.drift_correction:
@@ -104,6 +108,7 @@ def run_lidar(bundle: CaptureBundle, options: LidarOptions | None = None) -> Lid
             drift_notes += notes
             plan_cloud = fuse(frames, poses, voxel=MEASURE_VOXEL, stride=2, min_confidence=options.measure_confidence)
     clock.lap("stitch")
+    log("stitch", "plane-anchored adjustment done")
 
     layouts = {}
     for region in regions:
@@ -122,6 +127,7 @@ def run_lidar(bundle: CaptureBundle, options: LidarOptions | None = None) -> Lid
         opening_notes += [f"{region.id}: {n}" for n in notes]
     match_doors([o for found in openings_by_room.values() for o in found], layouts)
     clock.lap("openings")
+    log("openings", f"{sum(len(v) for v in openings_by_room.values())} openings")
 
     damage_by_room = {}
     if options.damage:
@@ -134,6 +140,8 @@ def run_lidar(bundle: CaptureBundle, options: LidarOptions | None = None) -> Lid
             damage_by_room[rid] = analyse_room(layout, openings_by_room.get(rid, []), mirrors_by_room.get(rid, []),
                                                frames, poses, rid, neighbours, bundle.warm_rgb)
     clock.lap("damage")
+    log("damage", f"{sum(len(d) for r in damage_by_room.values() for d in r.detections.values())} regions, "
+                  f"{sum(len(r.flags) for r in damage_by_room.values())} flags")
 
     key_of = {id(o): (rid, k) for rid, found in openings_by_room.items() for k, o in enumerate(found)}
     geometries = [_geometry(layouts[rid], openings_by_room.get(rid, []), key_of, damage_by_room.get(rid))

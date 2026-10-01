@@ -41,6 +41,11 @@ def read_arkitscenes(path: str | Path) -> CaptureBundle:
     depth_files = sorted((root / "lowres_depth").glob("*.png"), key=_stamp)
     stamps = np.array([_stamp(p) for p in depth_files])
     intrinsics = {round(_stamp(p), 3): p for p in (root / "lowres_wide_intrinsics").glob("*.pincam")}
+    # Optional 640x480 colour stream (vga_wide), matched by timestamp, for damage.
+    rgb_files = sorted((root / "vga_wide").glob("*.png"), key=_stamp) if (root / "vga_wide").is_dir() else []
+    rgb_stamps = np.array([_stamp(p) for p in rgb_files])
+    rgb_K_files = {round(_stamp(p), 3): p for p in (root / "vga_wide_intrinsics").glob("*.pincam")} \
+        if (root / "vga_wide_intrinsics").is_dir() else {}
     frames = []
     for row in traj:
         k = int(np.argmin(np.abs(stamps - row[0])))
@@ -55,8 +60,15 @@ def read_arkitscenes(path: str | Path) -> CaptureBundle:
         world_to_camera[:3, :3] = Rotation.from_rotvec(row[1:4]).as_matrix()
         world_to_camera[:3, 3] = row[4:7]
         K = _pincam(K_path)
+        rgb_K, rgb_size, load_rgb = K, (256, 192), None
+        if len(rgb_files):
+            r = int(np.argmin(np.abs(rgb_stamps - row[0])))
+            rgb_K_path = rgb_K_files.get(round(rgb_stamps[r], 3))
+            if abs(rgb_stamps[r] - row[0]) < 1 / 50 and rgb_K_path is not None:
+                rgb_K, rgb_size = _pincam(rgb_K_path), (640, 480)
+                load_rgb = (lambda p=rgb_files[r]: cv2.cvtColor(cv2.imread(str(p)), cv2.COLOR_BGR2RGB))
         frames.append(Frame(
-            index=len(frames), timestamp=float(row[0]), K=K, image_size=(256, 192),
+            index=len(frames), timestamp=float(row[0]), K=rgb_K, image_size=rgb_size, load_rgb=load_rgb,
             pose=np.linalg.inv(world_to_camera), depth_K=K, depth_size=(256, 192),
             load_depth=(lambda p=depth_path: cv2.imread(str(p), cv2.IMREAD_UNCHANGED).astype(np.float32) / 1000.0),
             load_confidence=(lambda p=conf_path: cv2.imread(str(p), cv2.IMREAD_UNCHANGED))))

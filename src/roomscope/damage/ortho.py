@@ -84,6 +84,8 @@ def render(grid: SurfaceGrid, frames: list[Frame], poses: dict[int, np.ndarray],
     best_quality = np.zeros(len(world))
     colour = np.zeros((len(world), 3), dtype=np.float32)
     for frame in frames:
+        if frame.load_rgb is None:
+            continue
         pose = poses[frame.index]
         centre = pose[:3, 3]
         to_point = world - centre

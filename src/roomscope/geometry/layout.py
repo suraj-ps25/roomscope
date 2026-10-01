@@ -67,11 +67,11 @@ def _intersect(a: WallLine, b: WallLine) -> np.ndarray | None:
     return np.linalg.solve(matrix, np.array([a.offset, b.offset]))
 
 
-def _mask_polygon(region: RoomRegion) -> np.ndarray:
+def _mask_polygon(region: RoomRegion, epsilon_cells: float = 2.0) -> np.ndarray:
     mask = ndimage.binary_opening(region.mask, structure=np.ones((3, 3))).astype(np.uint8)
     contours, _ = cv2.findContours(mask.T.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
     contour = max(contours, key=cv2.contourArea)
-    approx = cv2.approxPolyDP(contour, epsilon=2.0, closed=True)[:, 0, :].astype(float)
+    approx = cv2.approxPolyDP(contour, epsilon=epsilon_cells, closed=True)[:, 0, :].astype(float)
     # contour is in (col=i, row=j) of mask.T, i.e. (x cell, y cell); cell centres.
     polygon = region.origin + (approx + 0.5) * region.cell
     area = 0.5 * np.sum(polygon[:, 0] * np.roll(polygon[:, 1], -1) - polygon[:, 1] * np.roll(polygon[:, 0], -1))
@@ -227,10 +227,58 @@ def room_layout(region: RoomRegion, cloud: Cloud, tol: Tolerances = LIDAR_TOL) -
         lines.pop(worst)
 
     polygon = _corners(lines)
-    if polygon is None or len(polygon) < 3:
-        return None
+    if polygon is None or len(polygon) < 3 or not _plausible(polygon, region.area):
+        # Never ship a self-intersecting or implausible room: fall back to the free-space
+        # outline with wide wall uncertainty, and say so.
+        polygon, lines = _mask_fallback(region)
+        if polygon is None:
+            return None
+        notes.append("wall fit implausible; layout taken from the free-space outline (wide intervals)")
     # Vertex k is the start of wall k (intersection of wall k-1 and wall k).
     return RoomLayout(region.id, polygon, lines, floor_z, ceiling_z, floor_sigma, ceiling_sigma, points, notes)
+
+
+FALLBACK_SIGMA_M = 0.05
+
+
+def _signed_area(polygon: np.ndarray) -> float:
+    x, y = polygon[:, 0], polygon[:, 1]
+    return 0.5 * float(np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1)))
+
+
+def _segments_cross(a, b, c, d) -> bool:
+    def orient(p, q, r):
+        return np.sign((q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]))
+    return orient(a, b, c) != orient(a, b, d) and orient(c, d, a) != orient(c, d, b)
+
+
+def _plausible(polygon: np.ndarray, mask_area: float) -> bool:
+    area = _signed_area(polygon)
+    if area <= 0 or not 0.5 * mask_area <= area <= 1.6 * mask_area + 1.0:
+        return False
+    n = len(polygon)
+    for i in range(n):
+        for j in range(i + 2, n):
+            if i == 0 and j == n - 1:
+                continue
+            if _segments_cross(polygon[i], polygon[(i + 1) % n], polygon[j], polygon[(j + 1) % n]):
+                return False
+    return True
+
+
+def _mask_fallback(region: RoomRegion) -> tuple[np.ndarray | None, list[WallLine]]:
+    polygon = _mask_polygon(region, epsilon_cells=3.0)
+    if len(polygon) < 3 or _signed_area(polygon) <= 0:
+        return None, []
+    lines = []
+    for k in range(len(polygon)):
+        a, b = polygon[k - 1], polygon[k]
+        direction = (b - a) / max(np.linalg.norm(b - a), 1e-9)
+        inward = np.array([-direction[1], direction[0]])
+        lines.append(WallLine(inward, float(inward @ a), FALLBACK_SIGMA_M, 0, FALLBACK_SIGMA_M))
+    # lines[k] is the edge ending at vertex k; rotate so line k starts at vertex k.
+    lines = lines[1:] + lines[:1]
+    return _corners(lines) if _corners(lines) is not None else polygon, lines
 
 
 MIN_UPPER_COVERAGE = 0.35

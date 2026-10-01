@@ -309,8 +309,13 @@ def optimise_pose_graph(frames: list[Frame], poses: dict[int, np.ndarray],
         info = _odometry_information(float(np.linalg.norm(b.centre - a.centre)), settings.vio_scale)
         edges.append(Edge(a.index, b.index, Pose4.identity(), np.linalg.cholesky(info).T, loop=False))
 
+    from ..log import log
+    candidates = _loop_candidates(fragments)
+    log("drift", f"{len(fragments)} fragments, {len(candidates)} loop candidates")
     before, loops = [], []
-    for i, j in _loop_candidates(fragments):
+    for count, (i, j) in enumerate(candidates):
+        if count and count % 100 == 0:
+            log("drift", f"registered {count}/{len(candidates)} candidates, {len(loops)} accepted")
         result = _register(fragments[i], fragments[j], settings)
         if not _acceptable(result, settings):
             continue

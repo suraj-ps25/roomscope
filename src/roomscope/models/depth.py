@@ -19,6 +19,21 @@ MODEL_ID = "Ruicheng/moge-2-vitl-normal"
 _model = None
 
 
+def release() -> None:
+    """Drop the model (frees ~1.3 GB before the geometry stages)."""
+    global _model
+    _model = None
+    _empty_cache()
+
+
+def _empty_cache() -> None:
+    import gc
+    gc.collect()
+    if torch_device() == "mps":
+        import torch
+        torch.mps.empty_cache()
+
+
 @dataclass
 class MetricDepth:
     depth: np.ndarray

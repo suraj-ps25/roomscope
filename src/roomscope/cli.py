@@ -90,6 +90,12 @@ def build_parser() -> argparse.ArgumentParser:
     ev.add_argument("--out", help="write the full metrics JSON here")
     ev.set_defaults(func=_eval)
 
+    cal = sub.add_parser("calibrate", help="fit per-tier interval multipliers (split conformal) on ground truth")
+    cal.add_argument("tier", choices=TIERS)
+    cal.add_argument("runs", nargs="+", help="plan.json:truth.yaml pairs")
+    cal.add_argument("--out", help="write the calibration table (e.g. calibration/lidar.json)")
+    cal.set_defaults(func=_calibrate)
+
     sim = sub.add_parser("sim", help="generate a synthetic capture with exact ground truth (dev tool)")
     sim.add_argument("scene", help="scene spec YAML (see benchmark/sim/)")
     sim.add_argument("--tier", choices=TIERS, required=True)
@@ -113,6 +119,15 @@ def _eval(args: argparse.Namespace) -> int:
     print(summary_table(result))
     if args.out:
         Path(args.out).write_text(json.dumps(result, indent=2, default=float))
+    return 0
+
+
+def _calibrate(args: argparse.Namespace) -> int:
+    import json
+
+    from .benchmark.calibrate import run
+
+    print(json.dumps(run(args.tier, args.runs, args.out), indent=2))
     return 0
 
 

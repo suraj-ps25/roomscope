@@ -19,6 +19,17 @@ MODEL_ID = "facebook/map-anything-apache"
 _model = None
 
 
+def release() -> None:
+    """Drop the model (frees ~5 GB before the geometry stages)."""
+    global _model
+    _model = None
+    import gc
+    gc.collect()
+    if torch_device() == "mps":
+        import torch
+        torch.mps.empty_cache()
+
+
 @dataclass
 class ViewPrediction:
     depth: np.ndarray

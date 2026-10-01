@@ -20,6 +20,7 @@ from ..geometry.drift import VIDEO_DRIFT
 from ..geometry.planes import VIDEO_PLANES
 from ..geometry.tolerances import VIDEO_TOL
 from ..io.video import intrinsics_from_focal, read_video, select_keyframes
+from ..log import log
 from .lidar import LidarOptions, LidarResult, run_lidar
 from .photo import MOGE_VIEW_SPREAD, SCALE_BIAS_BUDGET, _confidence_levels, gravity_rotation
 
@@ -42,6 +43,7 @@ def _mean_transform(transforms: list[np.ndarray]) -> np.ndarray:
 
 
 def _chain_windows(images, intrinsics, depths):
+    from ..log import log
     from ..models.multiview import reconstruct
 
     n = len(images)
@@ -54,6 +56,7 @@ def _chain_windows(images, intrinsics, depths):
     for start in starts:
         end = min(start + WINDOW, n)
         views = reconstruct(images[start:end], intrinsics[start:end], depths[start:end])
+        log("multiview", f"window {starts.index(start) + 1}/{len(starts)} (keyframes {start}-{end - 1})")
         local = [v.pose for v in views]
         shared = [k for k in range(start, end) if poses[k] is not None]
         to_global = _mean_transform([poses[k] @ np.linalg.inv(local[k - start]) for k in shared]) if shared else np.eye(4)
@@ -71,15 +74,20 @@ def run_video(path, drift_correction: bool = True) -> LidarResult:
     from ..models.depth import metric_depth
 
     video = read_video(path)
+    log("ingest", f"decoded {len(video.images)} frames")
     keys = select_keyframes(video.images, video.timestamps)
     images = [video.images[k] for k in keys]
     stamps = video.timestamps[keys]
+    decoded = len(video.images)
+    video.images = []
+    log("ingest", f"{len(keys)} keyframes")
     height, width = images[0].shape[:2]
     K = intrinsics_from_focal(video.focal_35mm, video.source_size, (width, height)) if video.focal_35mm else None
     fov = None if K is None else float(np.degrees(2 * np.arctan(width / (2 * K[0, 0]))))
     # Metric depth on every DEPTH_EVERY-th keyframe anchors scale; the rest go in as images.
     metric = [metric_depth(image, fov) if k % DEPTH_EVERY == 0 else None for k, image in enumerate(images)]
     anchored = [m for m in metric if m is not None]
+    log("depth", f"MoGe-2 metric depth on {len(anchored)} anchor keyframes")
     if K is None:
         # One lens for the whole clip: take the median of MoGe's per-frame estimates.
         fx = float(np.median([m.K[0, 0] for m in anchored]))
@@ -88,6 +96,10 @@ def run_video(path, drift_correction: bool = True) -> LidarResult:
     poses, depth, mask, conf, view_K = _chain_windows(images, [K] * len(images),
                                                       [None if m is None else m.depth for m in metric])
 
+    from ..models import depth as depth_model, multiview
+    depth_model.release()
+    multiview.release()
+    log("multiview", "poses chained over all windows; models released")
     ratios = [float(np.median(m.depth[v & m.mask & (d > 0.1)] / d[v & m.mask & (d > 0.1)]))
               for m, d, v in zip(metric, depth, mask) if m is not None and (v & m.mask & (d > 0.1)).sum() > 500]
     correction = float(np.median(ratios)) if ratios else 1.0
@@ -114,7 +126,7 @@ def run_video(path, drift_correction: bool = True) -> LidarResult:
     profile = TierProfile("video", scale_sigma, "video multi-view reconstruction, MoGe-2 metric scale")
     bundle = CaptureBundle(str(getattr(path, "stem", path)).split("/")[-1], "video", frames, source_app="Camera (video)",
                            device=video.device,
-                           notes=[f"{len(keys)} keyframes from {len(video.images)} decoded frames, scale correction "
+                           notes=[f"{len(keys)} keyframes from {decoded} decoded frames, scale correction "
                                   f"{correction:.3f}, focal {'from metadata' if video.focal_35mm else 'estimated'}"])
     options = LidarOptions(drift_correction=drift_correction, profile=profile, tol=VIDEO_TOL, drift=VIDEO_DRIFT,
                            planes=VIDEO_PLANES, measure_confidence=1, select_keyframes=False)

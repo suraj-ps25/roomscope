@@ -113,23 +113,55 @@ EXTEND_M = 1.0
 BARRIER_MIN_M = 0.5
 
 
+DIRECTION_BIN_DEG = 2.0
+MIN_DIRECTION_SHARE = 0.04
+
+
 @dataclass
 class WallSegment:
-    """Axis-aligned wall trace in the plan: axis 0 means the wall lies at x = offset and runs
-    along y (its normal is +-x); axis 1 is the transpose."""
-    axis: int
+    """A straight wall trace in the plan: points n . p = offset with n = (cos a, sin a),
+    running from `start` to `end` along t = (-sin a, cos a). Any direction, not only the
+    dominant axes: real homes have angled walls, bays and chamfered corners."""
+    angle: float
     offset: float
     start: float
     end: float
+
+    @property
+    def normal(self) -> np.ndarray:
+        return np.array([np.cos(self.angle), np.sin(self.angle)])
+
+    @property
+    def tangent(self) -> np.ndarray:
+        return np.array([-np.sin(self.angle), np.cos(self.angle)])
+
+    def point(self, s: float) -> np.ndarray:
+        return self.normal * self.offset + self.tangent * s
+
+
+def _wall_directions(normals: np.ndarray) -> list[float]:
+    """Peaks of the wall-normal direction histogram, modulo 180 deg."""
+    theta = np.mod(np.arctan2(normals[:, 1], normals[:, 0]), np.pi)
+    bins = np.arange(0, np.pi + 1e-9, np.deg2rad(DIRECTION_BIN_DEG))
+    hist, edges = np.histogram(theta, bins=bins)
+    circular = np.concatenate([hist[-2:], hist, hist[:2]])
+    smooth = np.convolve(circular, [1, 2, 3, 2, 1], mode="same")[2:-2]
+    from scipy.signal import find_peaks
+    peaks, _ = find_peaks(np.concatenate([smooth[-3:], smooth, smooth[:3]]), height=MIN_DIRECTION_SHARE * len(theta),
+                          distance=int(15 / DIRECTION_BIN_DEG))
+    angles = sorted({round(float(edges[(p - 3) % len(hist)] + np.deg2rad(DIRECTION_BIN_DEG) / 2), 4) for p in peaks})
+    return angles
 
 
 def wall_segments(points: np.ndarray, normals: np.ndarray) -> list[WallSegment]:
     from scipy.signal import find_peaks
 
     segments = []
-    for axis in (0, 1):
-        on_axis = np.abs(normals[:, axis]) > 0.9
-        coord, along = points[on_axis, axis], points[on_axis, 1 - axis]
+    for angle in _wall_directions(normals):
+        n = np.array([np.cos(angle), np.sin(angle)])
+        t = np.array([-np.sin(angle), np.cos(angle)])
+        on_direction = np.abs(normals @ n) > 0.95
+        coord, along = points[on_direction] @ n, points[on_direction] @ t
         if len(coord) < SEGMENT_MIN_POINTS:
             continue
         bins = np.arange(coord.min() - SEGMENT_BIN, coord.max() + 2 * SEGMENT_BIN, SEGMENT_BIN)
@@ -144,29 +176,32 @@ def wall_segments(points: np.ndarray, normals: np.ndarray) -> list[WallSegment]:
             breaks = np.nonzero(np.diff(spans) > SEGMENT_GAP_M)[0]
             starts = np.concatenate([[spans[0]], spans[breaks + 1]])
             ends = np.concatenate([spans[breaks], [spans[-1]]])
-            for s, e in zip(starts, ends):
-                if e - s >= SEGMENT_MIN_M:
-                    segments.append(WallSegment(axis, offset, float(s), float(e)))
+            for a, b in zip(starts, ends):
+                if b - a >= SEGMENT_MIN_M:
+                    segments.append(WallSegment(angle, offset, float(a), float(b)))
     return segments
 
 
 def complete_corners(segments: list[WallSegment]) -> list[WallSegment]:
-    """Extend each wall trace to the nearest perpendicular wall within EXTEND_M. Rooms are
-    closed polygons, so a trace that stops short of a corner was just not observed there."""
+    """Extend each trace to where it meets a non-parallel trace, if that point lies within
+    EXTEND_M of both traces' observed ends. Rooms are closed polygons, so a trace that stops
+    short of a corner was just not observed there."""
     completed = []
     for seg in segments:
         start, end = seg.start, seg.end
         for other in segments:
-            if other.axis == seg.axis:
+            if abs(np.sin(seg.angle - other.angle)) < 0.3:
                 continue
-            # Both traces may stop short of their shared corner; each extends toward it.
-            if not (other.start - EXTEND_M <= seg.offset <= other.end + EXTEND_M):
+            matrix = np.array([seg.normal, other.normal])
+            corner = np.linalg.solve(matrix, np.array([seg.offset, other.offset]))
+            s_here, s_there = corner @ seg.tangent, corner @ other.tangent
+            if not (other.start - EXTEND_M <= s_there <= other.end + EXTEND_M):
                 continue
-            if seg.start - EXTEND_M <= other.offset < seg.start:
-                start = min(start, other.offset)
-            if seg.end < other.offset <= seg.end + EXTEND_M:
-                end = max(end, other.offset)
-        completed.append(WallSegment(seg.axis, seg.offset, start, end))
+            if seg.start - EXTEND_M <= s_here < seg.start:
+                start = min(start, s_here)
+            if seg.end < s_here <= seg.end + EXTEND_M:
+                end = max(end, s_here)
+        completed.append(WallSegment(seg.angle, seg.offset, start, end))
     return completed
 
 
@@ -174,13 +209,22 @@ def _draw_segments(segments: list[WallSegment], origin: np.ndarray, shape: tuple
     mask = np.zeros(shape, dtype=bool)
     for seg in segments:
         along = np.arange(seg.start, seg.end + CELL / 2, CELL / 2)
-        xy = np.zeros((len(along), 2))
-        xy[:, seg.axis] = seg.offset
-        xy[:, 1 - seg.axis] = along
+        xy = seg.normal * seg.offset + along[:, None] * seg.tangent
         ij = np.floor((xy - origin) / CELL).astype(int)
         ok = (ij[:, 0] >= 0) & (ij[:, 1] >= 0) & (ij[:, 0] < shape[0]) & (ij[:, 1] < shape[1])
         mask[ij[ok, 0], ij[ok, 1]] = True
     return mask
+
+
+MIN_WALL_SUPPORT = 0.4
+
+
+def _wall_support(mask: np.ndarray, walls: np.ndarray) -> float:
+    """Share of a region's boundary that runs along wall evidence. A room is enclosed;
+    a fan of free space carved through a doorway or window is not."""
+    boundary = mask & ~ndimage.binary_erosion(mask)
+    near_wall = ndimage.binary_dilation(walls, iterations=3)
+    return float((boundary & near_wall).sum() / max(boundary.sum(), 1))
 
 
 CEILING_CELL_M = 0.25
@@ -290,6 +334,11 @@ def segment_rooms(cloud: Cloud, frames, poses: dict[int, np.ndarray],
         if len(inside) < min_frames_inside:
             notes.append(f"dropped a {area:.1f} m2 region the camera never entered "
                          "(seen through a doorway or in a mirror)")
+            continue
+        support = _wall_support(mask, wall_grid)
+        if support < MIN_WALL_SUPPORT:
+            notes.append(f"dropped a {area:.1f} m2 region only {support:.0%} enclosed by walls (open space seen "
+                         "through an opening, not a room)")
             continue
         kept.append((label, inside))
 
