@@ -70,4 +70,4 @@ and held-out visits); it exercises the LiDAR tier, not the photo or video tiers.
 | Pretrained models disclosed | MoGe-2 (Microsoft, MIT), MapAnything (Meta, Apache-2.0, fallback only); see `README.md` |
 | Runs without calling our infrastructure | all local; weights from Hugging Face Hub by script |
 | Weights fetched by script | `scripts/setup.sh`; cache under `~/.cache` |
-| Mirrors, glass, wet-look surfaces, low light | mirror test (`geometry/openings.py`); glass returns treated as open; distorted depth views dropped (`tiers/photo.py`); protocol lighting step |
+| Mirrors, glass, wet-look surfaces, low light | mirror test (`geometry/openings.py`); glass returns treated as open; distorted depth views dropped (`tiers/photo.py`); protocol lighting step. **Real evidence:** in a real bathroom recording (ARKitScenes 47429912) the mirror over the sink was told apart from the window beside it on all three recordings, beside a glass shower screen; the laser survey applies the same reflection test |
