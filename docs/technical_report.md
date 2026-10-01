@@ -13,12 +13,14 @@ Results are in [`benchmark_report.md`](benchmark_report.md); requirement coverag
   intrinsics) and the built-in Camera app (photo, video). No custom app: anyone with an
   iPhone can capture today. The protocol (`capture_protocol.md`) is part of the
   algorithm. Each tier asks for exactly the motion its method needs.
-- **No iPhone was available to build this.** Development therefore leaned on three kinds
+- **No iPhone was available to build this.** Development therefore leaned on four kinds
   of evidence, each used for what it can show: a synthetic flat with exact truth (every
   stage, every tier); real scanned rooms rendered as protocol captures (realistic imagery
-  with exact metric truth); and real iPad frames with LiDAR depth (the depth model's
-  metric scale on real imagery). The real benchmark (laser truth, head-to-head, walk-in)
-  is built and ready, but has not been run.
+  with exact metric truth); real iPad frames with LiDAR depth (the depth model's metric
+  scale on real imagery); and **real iPad Pro LiDAR recordings of real rooms scored
+  against laser scans** (Apple's ARKitScenes, §8), on dev visits and on held-out visits
+  run once. The head-to-head and the walk-in on our own phone captures are scripted but
+  not run.
 - **Every number has an interval.** The schema requires `ci_low`/`ci_high` on every
   measurement; intervals are propagated, then calibrated per tier (§6).
 
@@ -148,26 +150,63 @@ propagated sigma at the video tier, with 88% held-out coverage.
 ## 7. Damage
 
 Metric orthophotos per surface at 5 mm, each texel taken from its best non-occluded
-view. Detectors run in an order that keeps each one's false positives from becoming
+view. Views are chosen greedily to cover the surface (a 15 cm lattice), and each view's
+colour gain is solved from overlaps, so an exposure step between views is not a stain.
+Dense geometry in front of a surface (shelves, lamps, furniture) or in a recess is masked,
+and a crack may not run along a mask's edge. Detectors run in an order that keeps each one's false positives from becoming
 another's: objects masked → mould → cracks → stains. Seven explicit concealed-damage rules
 fire with their evidence: stain under a window sill, moisture at the base of a wall,
 ceiling moisture, a diagonal crack from an opening corner, a large stain, mould, and
 moisture on a wall shared with a wet room. Scope lines are keyed to surfaces. Peeling
 paint is deliberately not reported: it is indistinguishable from lighting gradients.
 
-## 8. How it was built: the fix loop
+## 8. Real captures against laser truth
+
+ARKitScenes ships iPad Pro recordings (LiDAR depth, ARKit poses, colour) with Faro laser
+scans of the same rooms. `benchmark/real/laser_truth.py` surveys a scan as the protocol
+asks a person to: the plan names the walls; the scan gives their faces, corners,
+room-wide floor-to-ceiling height and openings (pane widths, mullions split, laser
+shadows and recesses rejected, mirrors identified by reflecting the see-through points).
+Every survey was checked against its overlay (`docs/real/`). Two visits were **dev**
+(bugs found and fixed, LiDAR intervals fitted); three were **held out**, chosen by rule
+before being looked at and run once (one runtime-only change while running them, §10).
+
+- **Found on dev:** a 10 cm ceiling step was traced as a wall and cut a bathroom in two
+  (1.94 m for 2.72 m); undamaged rooms reported up to 59 damage regions; and the damage
+  scorer was wrong: the synthetic "crack found" was a door-jamb edge on another wall.
+- **What the iPad's depth itself carries:** registered to the laser, the recordings' own
+  clouds are ~1% small and ~1° out of square on a room the laser says is square to 0.2°.
+  Walls come out 1–2.5% short whatever the layout does, so LiDAR intervals are now
+  calibrated on real recordings (walls ×4.2), not on the simulator.
+- **Held-out:** in the one large room with laser truth (≈18 m²), walls within a median
+  2 cm, worst 4.5–6.5 cm; ceilings 1.2–2.5 cm low. Small irregular rooms (a 5-wall
+  bathroom) score 7–25 cm, partly from phantom sliver walls that break the wall
+  sequence; openings mostly miss or are phantoms (2 of 33 within 2 cm); 5–15 false damage
+  regions per recording; all three recordings of one visit (27–35 s each) never closed a
+  room. Interval coverage on held-out visits is a median 33% against a 90% target.
+
+The full table is in [`benchmark_report.md`](benchmark_report.md).
+
+## 9. How it was built: the fix loop
 
 Every fix began as a failing number, was isolated by an ablation or a stage-level
 diagnostic against truth, landed as one commit with its before/after in the message, and
 was followed by a re-run of every tier the change touched. One such re-run caught a fix
 for the video tier regressing LiDAR openings (8/9 → 7/9); its cause, a margin defined as
-a share of a per-tier tolerance, was fixed the same day. Seven entries regenerate from
+a share of a per-tier tolerance, was fixed the same day. Ten entries regenerate from
 their two commits on an identical capture with one scorer (`benchmark/fix_loop/`).
 
-## 9. Limitations and next steps
+## 10. Limitations and next steps
 
-- **Real captures.** The benchmark set (laser truth), head-to-head and walk-in test are
-  specified and scripted but unrun.
+- **Real LiDAR accuracy.** On held-out real rooms the LiDAR tier misses the brief's
+  gates: ceilings 1–4 cm, openings poor, intervals overconfident (33% coverage). Next:
+  openings on real depth (glass gives no "no return" in densified depth, so the vote
+  model needs a new cue), sliver walls in small rooms, and the depth's own skew.
+- **Long recordings** were slow: a 7-minute recording sat 20+ minutes in the pose-graph
+  solve until its residuals were vectorised (found while running the held-out visits;
+  results moved by millimetres).
+- **Our own captures.** Head-to-head and walk-in on iPhone captures are scripted but unrun;
+  the photo and video tiers have no real capture with laser truth.
 - **Monocular scale.** The video ±3% gate is not met. The next lever is a door-height
   prior (interior doors are ~2.03 m, σ ≈ 2%). It wasn't validated here, because the
   scanned rooms' doors are offices' and were rarely detected.
@@ -175,4 +214,5 @@ their two commits on an identical capture with one scorer (`benchmark/fix_loop/`
   their bounding rectangle.
 - **LiDAR repeatability** is limited by the sensor's per-capture depth scale bias
   (simulated at 0.2%): two captures of one wall can differ by more than 0.5%.
-- **Damage** is validated on synthetic staging only; extents read low at soft edges.
+- **Damage** recall is validated on synthetic staging only (3/3 at the staged places);
+  on real undamaged rooms it still reports 2–15 false regions per recording.

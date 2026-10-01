@@ -2,8 +2,10 @@
 
 Every requirement in the brief → where it lives → the evidence → status.
 
-**done**: built and measured. **partial**: built, with a named gap. **pending**: needs real
-phone captures, which this build didn't have (no iPhone was available). Numbers are in
+**done**: built and measured. **partial**: built, with a named gap. **pending**: needs our
+own phone captures, which this build didn't have (no iPhone was available). "Real" below
+means real iPad Pro LiDAR recordings of real rooms with laser-scan truth (ARKitScenes, dev
+and held-out visits); it exercises the LiDAR tier, not the photo or video tiers. Numbers are in
 [`benchmark_report.md`](benchmark_report.md), generated from metrics files by
 `benchmark/run_all.sh`; nothing here is typed in by hand.
 
@@ -16,7 +18,7 @@ phone captures, which this build didn't have (no iPhone was available). Numbers 
 | Video tier: one handheld clip, any iPhone 15+ | `io/video.py`, `tiers/video.py` | rooms from on-the-spot turns; lens self-calibrated from the turns; visual compass for headings | done |
 | LiDAR tier: depth + poses on Pro devices | `io/stray.py`, `tiers/lidar.py` | Stray Scanner ingest → pose graph → plane-anchored adjustment | done |
 | Same output contract from every tier; intervals widen as data thins | `build.py` (`TierProfile`, per-room scale sigma) | one builder, one schema | done |
-| Device matrix | `docs/device_matrix.md` | tier × hardware × measured accuracy | done (synthetic + scanned rooms); real pending |
+| Device matrix | `docs/device_matrix.md` | tier × hardware × measured accuracy | done (synthetic, scanned rooms, real LiDAR); iPhone photo/video pending |
 
 ## Part 2: output contract and gates
 
@@ -24,28 +26,28 @@ phone captures, which this build didn't have (no iPhone was available). Numbers 
 |---|---|---|---|
 | Per-room plan: walls, ceiling, floor area, openings | `geometry/layout.py`, `geometry/sparse_layout.py`, `geometry/openings.py` | `rooms[]` in `plan.json` | done |
 | Stitched multi-room plan, correct adjacency | `geometry/rooms.py` (LiDAR), `geometry/stitch.py` (photo, video) | adjacency scored per run | done on the synthetic flat for all three tiers; see report for per-capture results |
-| Damage regions per surface, class and metric extent | `damage/ortho.py`, `damage/detect.py` | staged decals on the synthetic flat | partial: synthetic staging only; real staged damage pending |
+| Damage regions per surface, class and metric extent | `damage/ortho.py`, `damage/detect.py` | staged decals on the synthetic flat, scored at their staged place; undamaged real rooms for false positives | partial: 3/3 staged found; real rooms still report 2–15 false regions each; no real staged damage |
 | Concealed-damage flags naming the rule | `damage/rules.py` | `concealed_flags[]` with rule id, text and evidence; unit-tested | done |
 | Scope line items keyed to surfaces | `damage/scope.py` | `scope[]` | done |
 | Interval on every measurement | `model.py::Measurement`, `schema.py` | schema requires `ci_low/ci_high`; validator checks containment | done |
 | One command per capture | `cli.py` | `roomscope run <capture> --out <dir>` | done |
 | JSON to the published schema | `schema/floorplan.schema.json` | validated on every run | done |
 | Rendered plan | `render.py` | `plan.png` | done |
-| Openings ≤ 2 cm on ≥ 85% (misses and phantoms count) | `benchmark/evaluate.py` | per-run openings gate | measured per tier in the report; real pending |
-| Ceiling ≤ 1.5 cm; repeat spread ≤ 1 cm | `benchmark/evaluate.py` | per-run ceiling gate; repeatability pairs | measured (synthetic); real pending |
-| Repeatability ≤ 1 cm or 0.5% per wall | `evaluate.repeatability`, `benchmark/run_sim.py` | three independent LiDAR captures of the flat, pairwise | measured (synthetic); real pending |
+| Openings ≤ 2 cm on ≥ 85% (misses and phantoms count) | `benchmark/evaluate.py` | per-run openings gate | synthetic: passes at every tier with true depth, LiDAR 7–9/9; **real LiDAR: fails** (2 of 33 held-out openings) |
+| Ceiling ≤ 1.5 cm; repeat spread ≤ 1 cm | `benchmark/evaluate.py` | per-run ceiling gate; repeatability pairs | synthetic passes; **real LiDAR: partial** (held-out ceilings 0.6–4.2 cm, 4 of 10 within 1.5 cm) |
+| Repeatability ≤ 1 cm or 0.5% per wall | `evaluate.repeatability`, `benchmark/run_sim.py`, `benchmark/real/run_real.py` | synthetic: three captures pairwise; real: recordings of the same room | **partial**: synthetic 5–16 of 16 walls; real bathroom 2–3 of 4 (worst 4.9 cm); held-out pairs mostly differ in wall count |
 | Drift accountability + on/off ablation | `geometry/drift.py`, `geometry/planes.py`, `--no-drift-correction` | every LiDAR capture run both ways | done |
-| Photo whole-property stitch: no overlaps, footprint ±8% | `tiers/photo.py::threshold_links`, `geometry/stitch.py` | overlap and footprint per run | done (synthetic); real pending |
-| Walls: photo ±8%, video ±3%; calibration scored at every tier | `build.py`, `benchmark/calibrate.py` | scanned-room and synthetic results; held-out interval coverage | partial: on scanned rooms with the depth model, photo meets ±8% on 4 of 8 and video ±3% on 0 of 8 (the depth model's per-scene scale bias, measured at 5.9% across scenes); with true depth 6 of 8 and 5 of 8; held-out interval coverage 88–96% after calibration |
+| Photo whole-property stitch: no overlaps, footprint ±8% | `tiers/photo.py::threshold_links`, `geometry/stitch.py` | overlap and footprint per run | done (synthetic); iPhone captures pending |
+| Walls: photo ±8%, video ±3%; calibration scored at every tier | `build.py`, `benchmark/calibrate.py` | scanned-room and synthetic results; held-out interval coverage | partial: on scanned rooms with the depth model, photo meets ±8% on 4 of 8 and video ±3% on 0 of 8 (the depth model's per-scene scale bias, measured at 5.9% across scenes); with true depth 6 of 8 and 5 of 8; held-out interval coverage 88–96% after calibration on synthetic and scanned rooms; **LiDAR on held-out real rooms: 33% median coverage, overconfident** |
 
 ## Parts 3–5
 
 | Requirement | Where | Evidence | Status |
 |---|---|---|---|
 | Head-to-head vs a consumer app on 2 rooms (≥ 70% beat or tie) | `benchmark/head_to_head/` | protocol + scorer (tested on synthetic numbers) | pending: needs an iPhone and the two rooms |
-| Fix loop: declaration, regenerable before/after, diff | `docs/fix_loop.md`, `benchmark/fix_loop/` | seven regenerable entries (each one commit, same capture both sides, one scorer; tables in `benchmark/fix_loop/results/`) + history | done |
+| Fix loop: declaration, regenerable before/after, diff | `docs/fix_loop.md`, `benchmark/fix_loop/` | ten regenerable entries, three from real captures, (each one commit, same capture both sides, one scorer; tables in `benchmark/fix_loop/results/`) + history | done |
 | Commit as you work | git history | small commits with the measured before/after in the message | done |
-| Walk-in test: every tier runs cold | `scripts/setup.sh`, `scripts/walk_in.sh` | rehearsed on a fresh clone from GitHub: setup 1.5 min (weights cached), then every tier cold, one command each (LiDAR 6.4 min, all gates pass; video 5 min; photo 31 s) | done (synthetic); real pending |
+| Walk-in test: every tier runs cold | `scripts/setup.sh`, `scripts/walk_in.sh` | rehearsed on a fresh clone from GitHub: setup 1.5 min (weights cached), then every tier cold, one command each (LiDAR 6.4 min, all gates pass; video 5 min; photo 31 s) | done (synthetic); on our own iPhone captures pending |
 
 ## Deliverables
 
@@ -55,10 +57,10 @@ phone captures, which this build didn't have (no iPhone was available). Numbers 
 | 2 | Capture route + device matrix | `docs/capture_protocol.md`, `docs/device_matrix.md` | done |
 | 3 | Repo, README to running in < 15 min, one command per capture | `README.md`, `scripts/setup.sh` | done |
 | 4 | Reproduction bundle: raw → every number; cached model outputs replay; live path runs | `benchmark/run_all.sh`, `models/cache.py` | done |
-| 5 | Benchmark report | `docs/benchmark_report.md` (generated) | done for synthetic + scanned rooms; real pending |
+| 5 | Benchmark report | `docs/benchmark_report.md` (generated) | done: synthetic, scanned rooms, real LiDAR (dev + held-out) |
 | 6 | Fix-loop bundle | `docs/fix_loop.md`, `benchmark/fix_loop/` | done |
 | 7 | Technical report (≤ 6 pages) | `docs/technical_report.md` | done |
-| 8 | Raw benchmark data | `data/captures/` (generated, not in git) + `scripts/fetch_replica.sh` | done (synthetic + scanned); real pending |
+| 8 | Raw benchmark data | `data/captures/` (generated, not in git), `scripts/fetch_replica.sh`, `benchmark/real/fetch_arkitscenes.py`; laser truth in `benchmark/ground_truth/` | done (synthetic, scanned, real LiDAR) |
 
 ## Constraints
 
