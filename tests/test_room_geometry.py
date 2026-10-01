@@ -136,3 +136,54 @@ def test_umeyama_recovers_similarity():
     assert abs(s - 0.93) < 1e-9
     assert np.allclose(R_est, R, atol=1e-9)
     assert np.allclose(t, [1.0, -2.0, 0.5], atol=1e-9)
+
+
+def test_wall_directions_are_refined_off_bin_centres():
+    from roomscope.geometry.rooms import _wall_directions
+    rng = np.random.default_rng(4)
+    angle = np.radians(0.7)
+    normals = np.vstack([np.tile([np.cos(angle), np.sin(angle)], (3000, 1)),
+                         np.tile([-np.sin(angle), np.cos(angle)], (3000, 1))]) + rng.normal(0, 0.003, (6000, 2))
+    found = _wall_directions(normals)
+    assert min(abs(np.degrees(a) - 0.7) for a in found) < 0.1
+
+
+def test_traces_extend_along_their_wall_but_not_onto_furniture():
+    from roomscope.geometry.rooms import WallSegment, extend_along_walls
+    rng = np.random.default_rng(5)
+    # A wall x = 0 from y = 0 to 5, seen under the ceiling only for y in [2, 5].
+    wall = np.c_[np.zeros(400), rng.uniform(0, 5, 400)]
+    furniture = np.c_[np.full(100, 0.4), rng.uniform(-2, 0, 100)]   # a cupboard front, not on the line
+    points = np.vstack([wall, furniture])
+    normals = np.tile([1.0, 0.0], (len(points), 1))
+    trace = WallSegment(0.0, 0.0, 2.0, 5.0)   # normal (1, 0): x = 0; along t = (0, 1): y
+    extended = extend_along_walls([trace], points, normals)[0]
+    assert extended.start < 0.1 and extended.end > 4.9
+
+
+def test_threshold_pair_places_rooms_through_shared_standpoint():
+    from types import SimpleNamespace
+    from roomscope.tiers.photo import threshold_links
+    from roomscope.capture import Frame
+
+    def room(name, corners, cam_xy, yaw, taken_at):
+        layout = _rect_layout(name, corners)
+        pose = np.eye(4)
+        pose[:2, 3] = cam_xy
+        c, s = np.cos(yaw), np.sin(yaw)
+        pose[:3, 2] = [c, s, 0.0]
+        frame = Frame(0, 0.0, np.eye(3), (10, 10))
+        rec = SimpleNamespace(frames=[frame], poses={0: pose}, layout=layout)
+        photo = SimpleNamespace(taken_at=taken_at)
+        return rec, [photo]
+
+    # Room a: [0,4] x [0,3]; doorway in its east wall at (4.06, 1.5). Room b in its own frame,
+    # turned 90 degrees; the same standpoint is (1.5, -0.06) there (on b's south wall).
+    rec_a, photos_a = room("a", [[0, 0], [4, 0], [4, 3], [0, 3]], [4.06, 1.5], np.pi, 1000.0)
+    rec_b, photos_b = room("b", [[0, 0], [3, 0], [3, 3], [0, 3]], [1.5, -0.06], np.pi / 2, 1004.0)
+    links = threshold_links({"a": photos_a, "b": photos_b}, {"a": rec_a, "b": rec_b})
+    assert len(links) == 1
+    placed = links[0].transform.apply(rec_b.layout.polygon)
+    # b sits east of a, across the doorway wall.
+    assert placed[:, 0].min() > 4.0
+    assert abs(placed[:, 0].min() - 4.12) < 0.05
