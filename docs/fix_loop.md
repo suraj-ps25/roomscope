@@ -1,0 +1,95 @@
+# Fix loop
+
+How a failing number becomes a fix, and how anyone can regenerate the before and after.
+
+## The loop
+
+1. **Run the benchmark** and read the failing gate, not the average. Each run scores
+   every gate (`roomscope eval`).
+2. **Declare** the failure before touching code: symptom (the number), suspected cause,
+   and the measurement that would confirm it.
+3. **Isolate** the cause with the smallest experiment that can tell causes apart, often
+   an ablation (`--oracle-depth` swaps the depth model for rendered truth;
+   `--no-drift-correction` turns drift correction off) or a diagnostic of one stage
+   against truth.
+4. **Fix in one commit**, with the measured before/after in the message.
+5. **Re-run every tier the change touches.** Shared code (openings, layout, stitching)
+   serves all three tiers; a fix for one can break another.
+6. **Record** the entry in `benchmark/fix_loop/fixes.yaml`.
+
+## Regenerating
+
+```
+python benchmark/fix_loop/regenerate.py <id>     # or --all
+```
+
+For each entry, both commits are checked out into git worktrees and run on the
+**identical capture**, each with its own code; both plans are scored by the **current**
+evaluator, so before and after are measured with the same ruler. Output goes to
+`runs/fix_loop/<id>/{before,after}/` (plan.json, plan.png, metrics.json) with a
+`diff.md` table.
+
+## Entries
+
+### video-door-sill: oblique doorways read as windows (`8d57a7d` → `bf0c5d5`)
+
+- **Symptom:** video tier, flat_a, oracle depth. 4 of 5 doors seen from the hallway and
+  bathroom turns came out as windows with a 0.23 m sill, so they could not pair, and the
+  plan did not stitch.
+- **Isolation:** evidence counts in the strip under one hallway door showed identical
+  face and through votes at 0.10–0.22 m: the same rays were counted twice.
+- **Cause:** the "wall face" and "floor beyond the wall" vote classes overlapped. From
+  the middle of a room the bottom of a side doorway is seen at 60–70°, where those rays
+  land within the face tolerance.
+- **Fix:** made the classes exclusive, and tightened the floor-beyond margin for the
+  single-standpoint tiers.
+
+| metric | before | after |
+|---|---|---|
+| openings within 2 cm | 4/13 (4 phantom windows) | 7/9 |
+| adjacency | wrong | correct |
+
+### lidar-floor-margin: the fix above regressed LiDAR (`470c532` → `822fab3`)
+
+- **Symptom:** re-running the LiDAR tier after the door fix (step 5): openings 8/9 → 7/9,
+  the hallway's bedroom door missed, adjacency wrong.
+- **Isolation:** the pre-fix commit on the same new capture still passed (8/9, adjacency
+  correct), so the cause was code, not the capture.
+- **Cause:** the tightened margin was a share of the tier's face tolerance: 4.8 cm for
+  photos but 1.6 cm for LiDAR, inside LiDAR depth noise at the wall base.
+- **Fix:** the margin became an explicit per-tier tolerance (`floor_beyond_m`). LiDAR
+  keeps 4 cm, where the two classes are disjoint exactly as before; photo/video keep
+  the tighter margin.
+
+### video-pixel-aspect: every video-tier height ~1% short (`bf0c5d5` → `470c532`)
+
+- **Symptom:** video tier, flat_a, oracle depth. Ceilings 2.5–3.8 cm low in every room,
+  although each ceiling was perfectly flat (±0.5 cm) and walls were within 4 mm.
+- **Isolation:** a uniform vertical-only shortfall means a vertical scale error, not
+  depth or pose. The self-calibrated focal was 0.6% from truth, too little to explain it;
+  the decode's resize was the remaining step.
+- **Cause:** decoding 720×1280 to 294×518 (patch multiples) scales x by 0.4083 and y by
+  0.4047. Self-calibration then set fy = fx.
+- **Fix:** the decode's pixel aspect is carried through the rotation search and into K.
+
+| metric | before | after |
+|---|---|---|
+| ceiling max (cm) | 3.81 | 1.10 |
+| wall max (cm) | 1.79 | 0.39 |
+| openings within 2 cm | 7/9 | 9/9 |
+| footprint error | −0.2% | −0.04% |
+
+### Earlier fixes (in the history, found the same way)
+
+These predate the regeneration script, so their before/after is recorded in the commit
+messages rather than regenerated.
+
+| Commit | Failing number | Cause | Fix |
+|---|---|---|---|
+| `d1dd3a0` | LiDAR openings 4/9: three doors 3 cm narrow | residual along-wall sliding after drift correction; wall planes can't pin it | door and window jambs as bundle-adjustment landmarks: 9/9 |
+| `fcb425f` | LiDAR walls drifting tens of cm on multi-room walks | frame-to-model ICP accumulated as much drift as VIO | 4-DoF pose graph over 3 s fragments with ICP loop closures |
+| `0da9d24` | video walls +12–25% | monocular focal estimate 12.6% long; metric depth scales with it | focal self-calibrated from the room turns (0.6% from truth) |
+| `0da9d24` | video ATE 2.25 m (synthetic), 10–57 cm (real) | chaining a whole walk with windowed multi-view reconstruction | rooms from on-the-spot turns: no long trajectory to chain |
+| `74a9670` | video turn views 15% consistent | MoGe-2 per-view scale 0.46–1.55 on synthetic frames | per-view scale solved from overlaps (Cauchy IRLS), distorted views dropped |
+| `b70069d` | video walls 4–7 cm in two rooms | the first frame of a turn is mid-step, off the turning axis | trim turn ends; rotation averaging with SIFT loop closure |
+| `012db77` | bathroom turn missed | homography yaw 1–2°/step on white walls during an 8°/step turn | rotation-only yaw, forward-backward track check |

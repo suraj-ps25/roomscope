@@ -16,7 +16,7 @@ measurements, for all tiers.
 | Tier | What produces depth and poses | Then |
 |---|---|---|
 | LiDAR | ARKit depth + VIO poses (Stray Scanner) | shared core |
-| Video | MoGe-2 metric depth on anchor keyframes; MapAnything multi-view poses over overlapping windows, chained | shared core, video tolerances |
+| Video | per room turn: rotations from the clip itself, MoGe-2 metric depth per view, no pose solve | per-room layout, then doorway stitching with known headings |
 | Photo | per room: MoGe-2 + MapAnything on 2–8 stills | per-room layout, then doorway stitching |
 
 The photo and video tiers turn images into **pseudo-LiDAR frames** (metric depth, pose,
@@ -32,6 +32,42 @@ LiDAR, with noise-appropriate tolerances (`geometry/tolerances.py`,
 | MapAnything (images only) | 0.669 | 16.8% |
 | MoGe-2 | −0.5% | 6.9% |
 | MapAnything conditioned on MoGe-2 depth | 0.978 | 5.9% |
+
+## Video: rooms from on-the-spot turns
+
+Chaining a whole walkthrough with multi-view reconstruction failed in measurement:
+MapAnything over overlapping keyframe windows gave 10–57 cm ATE on real ARKitScenes video
+and 2.25 m on the synthetic walk. A room turn is a much better-posed problem, so the
+protocol asks for one per room (portrait, one revolution tilted down, one tilted up) and
+the pipeline (`io/video.py`, `tiers/video.py`, `tiers/photo.py::_panorama_room`) does:
+
+1. **Find the turns.** Per frame, a rotation-only fit gives the yaw step; a K-free
+   homography residual over forward-backward-checked tracks says whether the motion was a
+   pure rotation. A turn is a steady same-direction run of ≥ 280°.
+2. **Calibrate the lens from the turns.** For a pure rotation H = K R K⁻¹, so only the
+   true K makes every K⁻¹HK orthonormal (Hartley). On the synthetic clip: 0.6% from truth,
+   where the monocular model's estimate was 18% off. The decode's non-square pixel aspect
+   is kept (ignoring it made every height 1% short).
+3. **Rotations for every view.** 2-point Kabsch RANSAC on bearings frame to frame, then
+   SIFT loop closure across 360° and robust chordal rotation averaging over each frame's
+   next four (worst view 4° → 1.3°). The first and last 0.6 s of a turn are dropped: the
+   walker is still stepping.
+4. **A panorama, not a pose solve.** All views share a centre; the arm (phone to turning
+   axis) is the one under which the views agree best. Each view keeps its own MoGe-2
+   depth, and per-view scale is made consistent by Cauchy IRLS over the overlap depth
+   ratios; a view whose ratios disagree with any single scale (looking through a window,
+   into a mirror) is dropped.
+5. **Gravity** from wall normals (perpendicular to up) and floor/ceiling normals
+   (parallel), with only a weak pull to the cameras' mean up: in a corridor the walls fix
+   one horizontal axis and the prior breaks the tie.
+6. **Room headings for stitching.** A visual compass over the whole clip (tracked steps
+   snapped to the line segments' Manhattan axes) gives every room's heading to well under
+   45°, so the relative rotation between rooms snaps to the exact multiple of 90° and a
+   doorway candidate with the wrong rotation is never tried.
+
+With depth from the renderer instead of MoGe-2 (`--oracle-depth`), the synthetic video
+tier passes every gate (walls ≤ 0.4 cm, ceilings ≤ 1.1 cm, 9/9 openings, adjacency,
+footprint 0.0%): what remains in a real run is MoGe-2's error, which the intervals carry.
 
 ## Drift
 

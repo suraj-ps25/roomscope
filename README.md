@@ -41,11 +41,15 @@ Try it without a phone, on a synthetic flat with exact ground truth:
 ## How it works
 
 ```
-capture ─ ingest ─┬─ LiDAR: depth + ARKit poses ─────────────────────────┐
-                  ├─ video: keyframes → MoGe-2 depth → MapAnything poses ─┤─ drift correction ─ rooms ─ walls ─ openings ─ damage ─ plan
-                  └─ photo: per room: MoGe-2 + MapAnything → stitch by doorways ─────────────────────────────────────────┘
+capture ─ ingest ─┬─ LiDAR: depth + ARKit poses ─ drift correction ──────────────────────────┐
+                  ├─ video: find room turns → lens from the turns → rotations + MoGe-2 depth ─┤─ rooms ─ walls ─ openings ─ stitch ─ damage ─ plan
+                  └─ photo: per room: MoGe-2 + MapAnything ───────────────────────────────────┘
 ```
 
+- **Video**: each room is the on-the-spot turn the protocol asks for. The turn calibrates
+  the lens (pure rotation fixes K), gives every view's rotation, and becomes a panorama
+  with per-view MoGe-2 depth made consistent across overlaps; a line-based compass gives
+  each room's heading for stitching.
 - **Drift** (multi-room walks): a 4-DoF pose graph with ICP loop closures, then a
   plane-anchored bundle adjustment whose landmarks are the walls, floors, ceilings and
   door jambs. `--no-drift-correction` gives the ablation.

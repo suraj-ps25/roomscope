@@ -1,0 +1,47 @@
+# Fix-loop entries. Each is one commit, found by a failing benchmark number, and
+# regenerable: python benchmark/fix_loop/regenerate.py <id>
+
+- id: video-door-sill
+  title: Oblique doorways read as windows
+  symptom: >-
+    Video tier, flat_a with oracle depth: 4 of the 5 doors seen from the hallway and
+    bathroom turns came out as windows with a 0.23 m sill, so they could not pair and
+    the plan did not stitch.
+  cause: >-
+    In the opening evidence, a ray landing on the floor just beyond the wall plane voted
+    both "wall face" and "through": the two classes overlapped. From the middle of a room
+    the bottom of a side doorway is seen at 60-70 degrees, where every such ray lands
+    within the face tolerance.
+  fix: face and floor-beyond classes made exclusive; floor-beyond margin 0.4 x face tolerance
+  capture: data/captures/sim_flat_a_video
+  flags: [--oracle-depth]
+  before: 8d57a7d
+  after: bf0c5d5
+
+- id: video-pixel-aspect
+  title: Every video-tier height ~1% short
+  symptom: >-
+    Video tier, flat_a with oracle depth: ceilings 2.5-3.8 cm low in every room although
+    each ceiling was perfectly flat and wall lengths were within 4 mm.
+  cause: >-
+    Decoding 720x1280 to 294x518 (patch multiples) scales x and y differently (0.4083 vs
+    0.4047); focal self-calibration then set fy = fx, shrinking every vertical ray.
+  fix: carry the decode's pixel aspect through the rotation search and into K
+  capture: data/captures/sim_flat_a_video
+  flags: [--oracle-depth]
+  before: bf0c5d5
+  after: 470c532
+
+- id: lidar-floor-margin
+  title: The door fix regressed LiDAR openings
+  symptom: >-
+    Re-running the LiDAR tier after video-door-sill: openings 8/9 -> 7/9, the hallway's
+    bedroom door missed and adjacency wrong. The pre-fix commit on the same capture passed.
+  cause: >-
+    The tightened floor-beyond margin was a share (0.4) of the tier's wall-face tolerance:
+    4.8 cm for photos but 1.6 cm for LiDAR, inside depth noise at the wall base.
+  fix: explicit per-tier floor_beyond_m; LiDAR keeps 4 cm
+  capture: data/captures/sim_flat_a_lidar
+  flags: []
+  before: 470c532
+  after: 822fab3
