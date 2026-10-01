@@ -41,7 +41,7 @@ VIO_SIGMA_FLOOR_M = 0.002
 VIO_YAW_DEG_PER_SQRT_M = 0.2
 VIO_YAW_FLOOR_DEG = 0.02
 LOOP_SIGMA_M = 0.004
-GRADUATED_SCALES = (100.0, 30.0, 10.0, 3.0)
+GRADUATED_SCALES = (100.0, 30.0, 10.0, 3.0, 1.0)
 DEGENERATE_RATIO = 0.02
 
 
@@ -234,9 +234,11 @@ def _solve(n_nodes: int, edges: list[Edge]) -> list[Pose4]:
             nodes.append(Pose4(x[4 * k], x[4 * k + 1:4 * k + 4]))
         return nodes
 
+    weights = np.ones(len(edges))
+
     def residuals(x: np.ndarray) -> np.ndarray:
         nodes = unpack(x)
-        return np.concatenate([_edge_residual(nodes[e.i], nodes[e.j], e) for e in edges])
+        return np.concatenate([np.sqrt(w) * _edge_residual(nodes[e.i], nodes[e.j], e) for e, w in zip(edges, weights)])
 
     from scipy.sparse import lil_matrix
 
@@ -246,14 +248,21 @@ def _solve(n_nodes: int, edges: list[Edge]) -> list[Pose4]:
             if node > 0:
                 sparsity[4 * row:4 * row + 4, 4 * (node - 1):4 * node] = 1
 
-    # Graduated robustness: starting from odometry, a true loop closure can disagree by
-    # tens of sigma (the end of a long scan vs its start), and a tight Cauchy loss would
-    # throw it away as an outlier. So solve with a wide scale first, letting large true
-    # loops pull the graph closed, then tighten so genuinely wrong edges lose influence.
+    # Graduated robustness, on loop closures only. Starting from odometry, a true loop can
+    # disagree by tens of sigma (the end of a long scan vs its start), and a tight Cauchy
+    # loss would throw it away; so the scale starts wide and tightens. Odometry edges are
+    # never robustified: consecutive fragments are a few seconds of VIO apart, and letting
+    # the loss switch one off lets a cluster of wrong loops tear the graph there (flat_a
+    # seed 1: the last two fragments jumped 0.6 m to agree with ICP that had slid along the
+    # hallway).
     x = np.zeros(4 * (n_nodes - 1))
+    loop = np.array([e.loop for e in edges])
     for scale in GRADUATED_SCALES:
-        x = least_squares(residuals, x, loss="cauchy", f_scale=scale, method="trf", x_scale="jac",
-                          jac_sparsity=sparsity, max_nfev=100).x
+        for _ in range(3):
+            nodes = unpack(x)
+            norms = np.array([np.linalg.norm(_edge_residual(nodes[e.i], nodes[e.j], e)) for e in edges])
+            weights[:] = np.where(loop, 1.0 / (1.0 + (norms / scale) ** 2), 1.0)
+            x = least_squares(residuals, x, method="trf", x_scale="jac", jac_sparsity=sparsity, max_nfev=50).x
     return unpack(x)
 
 
