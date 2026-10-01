@@ -9,8 +9,8 @@ OUT=${OUT:-runs/walk_in}
 mkdir -p "$OUT" data/captures/walk_in
 for tier in lidar video photo; do
   capture=data/captures/walk_in/$tier
-  extra=(); [[ $tier == lidar ]] && extra=(--rgb-width 960)
-  [[ -f $capture/ground_truth.json ]] || $RS sim benchmark/sim/flat_a.yaml --tier $tier --out "$capture" "${extra[@]}" > /dev/null
+  extra=""; [[ $tier == lidar ]] && extra="--rgb-width 960"
+  [[ -f $capture/ground_truth.json ]] || $RS sim benchmark/sim/flat_a.yaml --tier $tier --out "$capture" $extra > /dev/null
   start=$(date +%s)
   $RS run "$capture" --out "$OUT/$tier" | tail -2
   echo "   $tier: $(( $(date +%s) - start )) s"

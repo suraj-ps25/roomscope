@@ -4,6 +4,8 @@
 #
 #   benchmark/run_all.sh            # ~2-3 h on an M2 (LiDAR sweep dominates)
 #
+# Resumable: a stage whose outputs already exist under $OUT is skipped (delete $OUT, or the
+# stage's folder, to rerun it).
 # Captures are generated if missing (synthetic flat: benchmark/sim/flat_a.yaml; scanned
 # rooms: data/public/replica/cull_replica_mesh, fetched by scripts/fetch_replica.sh).
 set -euo pipefail
@@ -15,20 +17,23 @@ OUT=${OUT:-runs/bench}
 mkdir -p "$OUT"
 
 echo "== LiDAR: 3 captures of the flat, drift correction on and off"
-$PY benchmark/run_sim.py --tier lidar --seeds 0 1 2 --drift 1.0 --ablation --out "$OUT/lidar"
+[[ -f $OUT/lidar/summary_lidar.json ]] || $PY benchmark/run_sim.py --tier lidar --seeds 0 1 2 --drift 1.0 --ablation --out "$OUT/lidar"
 
 echo "== LiDAR at full RGB resolution (1920x1440, as Stray Scanner records it), for damage"
 [[ -f data/captures/sim_flat_a_lidar/ground_truth.json ]] || $RS sim benchmark/sim/flat_a.yaml --tier lidar --out data/captures/sim_flat_a_lidar
-$RS run data/captures/sim_flat_a_lidar --out "$OUT/flat_a_lidar_fullres"
-$RS eval "$OUT/flat_a_lidar_fullres/plan.json" data/captures/sim_flat_a_lidar/ground_truth.json --out "$OUT/flat_a_lidar_fullres/metrics.json"
+if [[ ! -f $OUT/flat_a_lidar_fullres/metrics.json ]]; then
+  $RS run data/captures/sim_flat_a_lidar --out "$OUT/flat_a_lidar_fullres"
+  $RS eval "$OUT/flat_a_lidar_fullres/plan.json" data/captures/sim_flat_a_lidar/ground_truth.json --out "$OUT/flat_a_lidar_fullres/metrics.json"
+fi
 
 echo "== photo and video on the synthetic flat: depth model and rendered true depth"
 for tier in photo video; do
   capture=data/captures/sim_flat_a_$tier
   [[ -f $capture/ground_truth.json ]] || $RS sim benchmark/sim/flat_a.yaml --tier $tier --out $capture
   for depth in model oracle; do
-    flags=(); [[ $depth == oracle ]] && flags=(--oracle-depth)
-    $RS run $capture --out "$OUT/flat_a_${tier}_$depth" "${flags[@]}"
+    [[ -f $OUT/flat_a_${tier}_$depth/metrics.json ]] && continue
+    flags=""; [[ $depth == oracle ]] && flags="--oracle-depth"
+    $RS run $capture --out "$OUT/flat_a_${tier}_$depth" $flags
     $RS eval "$OUT/flat_a_${tier}_$depth/plan.json" $capture/ground_truth.json --out "$OUT/flat_a_${tier}_$depth/metrics.json"
   done
 done
@@ -43,7 +48,7 @@ done
 $PY benchmark/run_replica.py --out "$OUT/replica"
 
 echo "== depth model scale per scene"
-$PY benchmark/depth_model_scale.py --out "$OUT/depth_scale.json"
+[[ -f $OUT/depth_scale.json ]] || $PY benchmark/depth_model_scale.py --out "$OUT/depth_scale.json"
 
 echo "== interval calibration (split conformal, leave-one-capture-out coverage)"
 lidar_runs=(); for s in 0 1 2; do lidar_runs+=("$OUT/lidar/flat_a_lidar_d1_s${s}_corrected/plan.json:data/captures/simbench/flat_a_lidar_d1_s$s/ground_truth.json"); done

@@ -45,8 +45,11 @@ def main() -> int:
             for depth in args.depth:
                 run_dir = out / f"{room}_{tier}_{depth}"
                 flags = ["--oracle-depth"] if depth == "oracle" else []
-                done = subprocess.run([roomscope, "run", str(capture), "--out", str(run_dir), *flags],
-                                      capture_output=True, text=True)
+                if (run_dir / "plan.json").exists() and (run_dir / "metrics.json").exists():
+                    done = subprocess.CompletedProcess([], 0)    # resumable: already run
+                else:
+                    done = subprocess.run([roomscope, "run", str(capture), "--out", str(run_dir), *flags],
+                                          capture_output=True, text=True)
                 if done.returncode != 0:
                     rows.append({"room": room, "tier": tier, "depth": depth, "error": done.stderr.strip().splitlines()[-1]})
                     print(json.dumps(rows[-1]), flush=True)
