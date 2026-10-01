@@ -385,10 +385,14 @@ def turn_rotations(images: list[np.ndarray], turn: tuple[int, int], K: np.ndarra
     previous_step = np.eye(3)
     sizes = []
     for k in range(start + 1, end + 1):
-        R, _ = rotation_between(greys[k - 1], greys[k], K, rng, allow_translation=False)
+        R, count = rotation_between(greys[k - 1], greys[k], K, rng, allow_translation=False)
         size = np.degrees(np.arccos(np.clip((np.trace(R) - 1) / 2, -1, 1))) if R is not None else np.inf
-        # A turn is steady: a step far off the recent rate is a bad fit, not a lurch.
-        if R is None or (len(sizes) >= 3 and size > max(2.5 * np.median(sizes[-8:]), 6.0)):
+        # A turn is steady: a step far off the recent rate, either way, is a bad fit (a blank
+        # wall filling the frame reads as no rotation at all), and so is one resting on a
+        # handful of tracks. Carry the previous step; averaging refines it below.
+        recent = np.median(sizes[-8:]) if len(sizes) >= 3 else None
+        if (R is None or count < TURN_MIN_TRACKS
+                or (recent is not None and not (TURN_SLOW_SHARE * recent <= size <= max(2.5 * recent, 6.0)))):
             R = previous_step
         else:
             sizes.append(size)
@@ -399,6 +403,8 @@ def turn_rotations(images: list[np.ndarray], turn: tuple[int, int], K: np.ndarra
 
 
 AVERAGING_SPAN = 4
+TURN_MIN_TRACKS = 30
+TURN_SLOW_SHARE = 0.35
 TURN_EDGE_FRAMES = 3
 
 

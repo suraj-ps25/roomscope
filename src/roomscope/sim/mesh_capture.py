@@ -87,7 +87,7 @@ def _clearance(scene: MeshScene, point_xy: np.ndarray, floor: float) -> float:
     return nearest
 
 
-def standpoint(scene: MeshScene, truth: dict, near_xy: np.ndarray) -> np.ndarray:
+def standpoint(scene: MeshScene, truth: dict, near_xy: np.ndarray, max_offset: float = 1.2) -> np.ndarray:
     """The free spot (clear of furniture by CLEARANCE_M at shin, waist and eye height)
     closest to near_xy."""
     floor = truth["_floor_z"]
@@ -101,10 +101,17 @@ def standpoint(scene: MeshScene, truth: dict, near_xy: np.ndarray) -> np.ndarray
             candidates.append(to_world @ np.array([x, y]))
     candidates = np.array(candidates)
     order = np.argsort(np.linalg.norm(candidates - near_xy, axis=1))
-    for k in order[:200]:
-        if _clearance(scene, candidates[k], floor) >= CLEARANCE_M:
+    # The clearest of the nearby spots, if none has the full clearance: a crowded corner is
+    # still photographed from near that corner, not from wherever the room happens to be free.
+    nearby = [k for k in order[:60] if np.linalg.norm(candidates[k] - near_xy) < max_offset]
+    best, best_clear = order[0], -1.0
+    for k in nearby or order[:1]:
+        clear = _clearance(scene, candidates[k], floor)
+        if clear >= CLEARANCE_M:
             return candidates[k]
-    return candidates[order[0]]
+        if clear > best_clear:
+            best, best_clear = k, clear
+    return candidates[best]
 
 
 def _iphone_camera(size: tuple[int, int], video: bool) -> Camera:
@@ -145,16 +152,24 @@ def write_video(scene_path: Path, out: Path, fps: float = 10.0, size: tuple[int,
     # Walk in from near a corner (as from a doorway), turn twice (down, then up), walk on.
     heading = np.arctan2(*(spot - start)[::-1])
     walk = np.linalg.norm(spot - start)
-    for k in range(int(walk / 0.5 * fps)):
-        xy = start + (spot - start) * k / max(int(walk / 0.5 * fps), 1)
-        poses.append(pose_from_yaw_pitch(np.r_[xy, eye_z + 0.015 * np.sin(k)], heading, np.radians(-5)))
+    walk_frames = int(walk / 0.5 * fps)
     turns = int(2 * SPIN_SECONDS * fps)
+    start_pitch = DOUBLE_SPIN_PITCH_RAD * np.tanh(-2 * np.pi)
+    end_pitch = DOUBLE_SPIN_PITCH_RAD * np.tanh(2 * np.pi)
+    for k in range(walk_frames):
+        xy = start + (spot - start) * k / max(walk_frames, 1)
+        # Over the last second of the walk the phone tips down into the turn's first tilt.
+        ramp = np.clip((k - (walk_frames - fps)) / fps, 0, 1)
+        pitch = (1 - ramp) * np.radians(-5) + ramp * start_pitch
+        poses.append(pose_from_yaw_pitch(np.r_[xy, eye_z + 0.015 * np.sin(k)], heading, pitch))
     for k in range(turns):
         spin = 4 * np.pi * k / turns
         pitch = DOUBLE_SPIN_PITCH_RAD * np.tanh((spin - 2 * np.pi) / 1.0)
         poses.append(pose_from_yaw_pitch(np.r_[spot, eye_z] + rng.normal(0, 0.004, 3), heading + spin, pitch))
     for k in range(int(1.5 * fps)):
-        poses.append(pose_from_yaw_pitch(np.r_[spot, eye_z], heading + 4 * np.pi, np.radians(-5)))
+        ramp = min(1.0, k / fps)
+        pitch = (1 - ramp) * end_pitch + ramp * np.radians(-5)
+        poses.append(pose_from_yaw_pitch(np.r_[spot, eye_z], heading + 4 * np.pi, pitch))
     out.mkdir(parents=True, exist_ok=True)
     encoder = subprocess.Popen(["ffmpeg", "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24",
                                 "-s", f"{size[0]}x{size[1]}", "-r", str(fps), "-i", "-", "-c:v", "libx264",
