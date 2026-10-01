@@ -297,11 +297,20 @@ def photo_views(scene: SceneSpec, room_id: str, eye_height: float = 1.5) -> list
         # Close to level (about 5 degrees down), so floor and ceiling edges both show.
         drop = np.tan(np.radians(5)) * float(np.linalg.norm(target - eye))
         views.append((f"corner{i + 1}", look_at([*eye, eye_height], [*target, eye_height - drop])))
-    doors = [o for o in scene.openings if o.room == room_id and o.type == "door"]
-    for door in doors:
-        start, direction, _, inward = room.wall_frame(door.wall)
+    # Doorways to other rooms: standing on the threshold, one shot into this room (the
+    # protocol takes one into each room, back to back).
+    for door in scene.openings:
+        if (door.type != "door" or not door.connects_to or door.id.endswith("~")
+                or room_id not in (door.room, door.connects_to)):
+            continue
+        host = scene.room(door.room)
+        start, direction, _, inward = host.wall_frame(door.wall)
         centre = start + direction * (door.offset + door.width / 2)
-        standoff = min(1.0, 0.45 * float(dims.min()))
-        eye = standable(scene, room, centre + inward * standoff)
-        views.append((f"door_{door.id.rstrip('~')}", look_at([*eye, eye_height], [*centre, eye_height - 0.15])))
+        into = inward if room_id == door.room else -inward
+        eye = centre - into * (scene.wall_thickness / 2 if room_id == door.room else -scene.wall_thickness / 2)
+        # Across the room toward its far corner (protocol), so the shot overlaps the corners'.
+        far = max(scene.room(room_id).polygon, key=lambda corner: float(np.linalg.norm(corner - eye)))
+        target = eye + (far - eye) * 0.8
+        drop = np.tan(np.radians(5)) * float(np.linalg.norm(target - eye))
+        views.append((f"threshold_{door.id.rstrip('~')}", look_at([*eye, eye_height], [*target, eye_height - drop])))
     return views[:8]

@@ -74,6 +74,7 @@ class StitchResult:
     links: list[Candidate]
     unlinked: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    fixed_links: list[tuple[str, str]] = field(default_factory=list)
 
 
 def _doors(room: str, layout, openings) -> list[DoorRef]:
@@ -138,7 +139,18 @@ def _wrapped_deg(angle: float) -> float:
     return float(np.degrees(np.abs((angle + np.pi) % (2 * np.pi) - np.pi)))
 
 
-def stitch(rooms: dict[str, tuple], headings: dict[str, float] | None = None) -> StitchResult:
+@dataclass
+class FixedLink:
+    """A placement known independently of door matching (two photos taken from one
+    doorway threshold, one into each room): room b's pose in room a's frame."""
+    a: str
+    b: str
+    transform: Transform2D
+    point_a: np.ndarray            # the shared standpoint, in a's frame
+
+
+def stitch(rooms: dict[str, tuple], headings: dict[str, float] | None = None,
+           fixed: list[FixedLink] | None = None) -> StitchResult:
     """rooms: name -> (layout, openings, cloud). Returns each room's pose in the property frame.
 
     headings (video tier): each room frame's known rotation into a common frame. A doorway
@@ -185,6 +197,30 @@ def stitch(rooms: dict[str, tuple], headings: dict[str, float] | None = None) ->
     used: set[tuple[str, int]] = set()
     links: list[Candidate] = []
     notes: list[str] = []
+    fixed_links: list[tuple[str, str]] = []
+    for link in fixed or []:
+        ga, gb = find(link.a), find(link.b)
+        if ga == gb:
+            continue
+        b_group_to_a = local[link.a].compose(link.transform).compose(local[link.b].inverse())
+        moved = {n: b_group_to_a.compose(local[n]) for n in names if find(n) == gb}
+        polygons = [local[n].apply(rooms[n][0].polygon) for n in names if find(n) == ga] + \
+                   [moved[n].apply(rooms[n][0].polygon) for n in moved]
+        if _overlap(polygons) > MAX_OVERLAP_M2:
+            notes.append(f"threshold photos {link.a}<->{link.b} rejected: placement overlaps another room")
+            continue
+        for n, pose in moved.items():
+            local[n] = pose
+        group[gb] = ga
+        fixed_links.append((link.a, link.b))
+        # The doorway each side: the detected door nearest the shared standpoint, if any.
+        point_b = link.transform.inverse().apply(link.point_a[None])[0]
+        near_a = min((d for d in doors[link.a]), key=lambda d: np.linalg.norm(d.centre - link.point_a), default=None)
+        near_b = min((d for d in doors[link.b]), key=lambda d: np.linalg.norm(d.centre - point_b), default=None)
+        if (near_a is not None and near_b is not None and np.linalg.norm(near_a.centre - link.point_a) < 0.8
+                and np.linalg.norm(near_b.centre - point_b) < 0.8):
+            used |= {(near_a.room, near_a.index), (near_b.room, near_b.index)}
+            links.append(Candidate(near_a, near_b, link.transform, 1.0, (float("nan"), float("nan"))))
     for cand in candidates:
         ga, gb = find(cand.a.room), find(cand.b.room)
         if ga == gb or (cand.a.room, cand.a.index) in used or (cand.b.room, cand.b.index) in used:
@@ -221,4 +257,4 @@ def stitch(rooms: dict[str, tuple], headings: dict[str, float] | None = None) ->
             transforms[n] = Transform2D(local[n].angle, local[n].t + shift)
             offset += polygon.max(axis=0)[0] - polygon.min(axis=0)[0] + 1.0
         notes.append(f"no verified doorway to: {', '.join(unlinked)} (placed beside the plan, unconnected)")
-    return StitchResult(transforms, links, unlinked, notes)
+    return StitchResult(transforms, links, unlinked, notes, fixed_links)

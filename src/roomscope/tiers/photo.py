@@ -424,6 +424,61 @@ def room_headings(reconstructions: dict, orientations: dict) -> dict[str, float]
     return headings
 
 
+THRESHOLD_PAIR_S = 12.0
+THRESHOLD_ON_WALL_M = 0.35
+
+
+def _nearest_wall(layout, point: np.ndarray) -> tuple[float, np.ndarray]:
+    """Distance from point to the room outline, and that wall's inward normal."""
+    best, normal = np.inf, None
+    polygon = layout.polygon
+    for k, (a, b) in enumerate(zip(polygon, np.roll(polygon, -1, axis=0))):
+        t = np.clip((point - a) @ (b - a) / max((b - a) @ (b - a), 1e-12), 0, 1)
+        gap = float(np.linalg.norm(a + t * (b - a) - point))
+        if gap < best:
+            best, normal = gap, layout.lines[k].normal
+    return best, normal
+
+
+def threshold_links(folders: dict, usable: dict) -> list:
+    """Doorway photo pairs: the protocol takes one photo into each room from the doorway
+    threshold, back to back. Two photos in different rooms' folders taken within
+    THRESHOLD_PAIR_S share a camera centre, which places one room relative to the other
+    directly; the rotation comes from the doorway's wall, whose inward normals in the two
+    rooms must be opposite. Validated geometrically: the shared standpoint must lie on a
+    wall of both rooms, and the stitcher rejects any placement that overlaps."""
+    from ..geometry.stitch import FixedLink, Transform2D
+
+    shots = []
+    for name, rec in usable.items():
+        for frame in rec.frames:
+            photo = folders[name][int(frame.timestamp)]
+            if photo.taken_at is not None:
+                pose = rec.poses[frame.index]
+                shots.append((name, photo.taken_at, pose[:2, 3].copy()))
+    candidates = []
+    for i, (room_a, t_a, c_a) in enumerate(shots):
+        for room_b, t_b, c_b in shots[i + 1:]:
+            if room_a == room_b or abs(t_a - t_b) > THRESHOLD_PAIR_S:
+                continue
+            gap_a, n_a = _nearest_wall(usable[room_a].layout, c_a)
+            gap_b, n_b = _nearest_wall(usable[room_b].layout, c_b)
+            if gap_a > THRESHOLD_ON_WALL_M or gap_b > THRESHOLD_ON_WALL_M:
+                continue
+            # The doorway's wall, seen from each side: its inward normals are opposite. That
+            # fixes the rotation exactly, whichever way each photo points.
+            angle = float(np.arctan2(-n_a[1], -n_a[0]) - np.arctan2(n_b[1], n_b[0]))
+            transform = Transform2D(angle, np.zeros(2))
+            transform = Transform2D(angle, c_a - transform.R @ c_b)
+            candidates.append((abs(t_a - t_b), FixedLink(room_a, room_b, transform, c_a)))
+    links, joined = [], set()
+    for _, link in sorted(candidates, key=lambda item: item[0]):
+        if (link.a, link.b) not in joined:
+            joined |= {(link.a, link.b), (link.b, link.a)}
+            links.append(link)
+    return links
+
+
 def plan_from_photo_sets(folders: dict, capture_id: str, profile, source_app: str,
                          extra_notes: list[str] | None = None, orientations: dict | None = None) -> "PhotoResult":
     """Per-room photo sets (from folders, or from the room turns found in a video) ->
@@ -449,7 +504,10 @@ def plan_from_photo_sets(folders: dict, capture_id: str, profile, source_app: st
     headings = room_headings(usable, orientations) if orientations else None
     if headings:
         log("stitch", "room headings from the video: " + ", ".join(f"{n} {np.degrees(h):.0f}" for n, h in headings.items()))
-    stitched = stitch({n: (r.layout, r.openings, r.cloud) for n, r in usable.items()}, headings)
+    fixed = threshold_links(folders, usable) if not orientations else []
+    if fixed:
+        log("stitch", "threshold photo pairs: " + ", ".join(f"{l.a}-{l.b}" for l in fixed))
+    stitched = stitch({n: (r.layout, r.openings, r.cloud) for n, r in usable.items()}, headings, fixed)
     timing["stitch"] = round(time.perf_counter() - start, 2)
 
     partner = {}
@@ -492,7 +550,9 @@ def plan_from_photo_sets(folders: dict, capture_id: str, profile, source_app: st
     drift = model.DriftReport(
         "rooms reconstructed independently (no long trajectory to drift); placed by verified doorways",
         False, notes=stitched.notes)
-    plan = build_plan(capture_id, profile, geometries, drift, source_app=source_app,
+    door_linked = {tuple(sorted((link.a.room, link.b.room))) for link in stitched.links}
+    extra = [(a, b) for a, b in stitched.fixed_links if tuple(sorted((a, b))) not in door_linked]
+    plan = build_plan(capture_id, profile, geometries, drift, source_app=source_app, extra_adjacency=extra,
                       frames_used=index, capture_notes=(extra_notes or [])
                       + ([f"no layout recovered for: {', '.join(failed)}"] if failed else []) + stitched.notes)
     plan.timing_s = timing

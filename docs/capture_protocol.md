@@ -53,8 +53,11 @@ the camera.
      **opposite corner**, at chest height, held **nearly level** (a touch down) so **both
      the floor and the ceiling edge** are in the picture. Check the ceiling edge is
      really in frame, especially in a small room; if not, step back into the corner.
-   - **Then one photo per doorway:** stand about **1 m inside the room facing the
-     doorway**, so the whole door frame and a glimpse of the next room are in view.
+   - **Then, at every doorway into another room:** stand **on the threshold** and take
+     **one photo into each room, back to back** (turn round between them), each pointing
+     across that room toward its far corner. The two go into the two rooms' folders.
+     They are how the rooms are joined: both were taken from one spot, so the plan knows
+     exactly where each room sits relative to the other.
 3. Hand-off: make **one folder per room** on the Mac, named after the room
    (`kitchen`, `bedroom`, `hallway`, …), and put that room's photos in it. AirDrop with
    **Options → All Photos Data** on, so each photo keeps its camera information.

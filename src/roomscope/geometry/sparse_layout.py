@@ -32,6 +32,7 @@ UNSEEN_SIGMA_M = 0.15
 FOOTPRINT_MARGIN_M = 0.05
 TYPICAL_CEILING_M = 2.5
 UPPER_BAND_M = 0.6
+CAMERA_ON_WALL_M = 0.3
 UPPER_MIN_SHARE = 0.3
 
 
@@ -91,7 +92,10 @@ def rectangle_layout(room: str, cloud: Cloud, cameras_xy: np.ndarray) -> RoomLay
     vertical = (np.abs(cloud.normals[:, 2]) < 0.3) & (z > floor_z + 0.3) & (z < ceiling_z - 0.08)
     points, normals = cloud.points[vertical, :2], cloud.normals[vertical, :2]
     heights = z[vertical] - floor_z
-    lo, hi = cameras_xy.min(axis=0), cameras_xy.max(axis=0)
+    # A doorway threshold shot stands on the wall line itself, so walls are searched from a
+    # little inside the cameras' extent; nearest-first still prefers the wall over anything
+    # glimpsed beyond it.
+    lo, hi = cameras_xy.min(axis=0) + CAMERA_ON_WALL_M, cameras_xy.max(axis=0) - CAMERA_ON_WALL_M
     sides, unseen = {}, []
     everything = cloud.points[(z > floor_z + 0.1) & (z < ceiling_z - 0.05), :2]
     for axis in (0, 1):

@@ -45,7 +45,8 @@ def render_many(scene_path: str, camera: Camera, poses: np.ndarray, seed: int = 
         yield from pool.map(_render_rgb, jobs, chunksize=4)
 
 
-def _iphone_exif(camera: Camera, model: str) -> Image.Exif:
+def _iphone_exif(camera: Camera, model: str, taken_at: float | None = None) -> Image.Exif:
+    from datetime import datetime
     exif = Image.Exif()
     exif[EXIF_MAKE] = "Apple"
     exif[EXIF_MODEL] = model
@@ -53,6 +54,9 @@ def _iphone_exif(camera: Camera, model: str) -> Image.Exif:
     ifd = exif.get_ifd(EXIF_IFD)
     ifd[EXIF_FOCAL35] = int(round(camera.fx * 43.27 / diag))
     ifd[EXIF_FOCAL] = 5.96
+    if taken_at is not None:
+        ifd[0x9003] = datetime.fromtimestamp(int(taken_at)).strftime("%Y:%m:%d %H:%M:%S")
+        ifd[0x9291] = f"{int(round((taken_at % 1) * 1000)):03d}"
     return exif
 
 
@@ -81,14 +85,35 @@ def write_photo_tier(scene_path: str | Path, out: Path, rooms: list[str] | None 
     camera = Camera.iphone_main(*size)
     counter = 1
     oracle_poses = {}
+    # Capture times as a person following the protocol would produce them: a few seconds
+    # between shots in a room, and the two threshold shots of a doorway back to back.
+    clock = 1_700_000_000.0
+    door_times: dict[str, float] = {}
     for room_id in rooms or [r.id for r in scene.rooms]:
         views = photo_views(scene, room_id)
         folder = out / room_id
+        if folder.exists():
+            import shutil
+            shutil.rmtree(folder)
         folder.mkdir(parents=True, exist_ok=True)
         poses = np.asarray([pose for _, pose in views])
-        for rgb in render_many(str(scene_path), camera, poses, seed + counter, exposure, noise):
+        clock += 60.0   # walking to the next room
+        times = []
+        for name, _ in views:
+            if name.startswith("threshold_"):
+                door = name[len("threshold_"):]
+                if door in door_times:
+                    times.append(door_times[door] + 4.0)
+                    continue
+                clock += 30.0
+                door_times[door] = clock
+                times.append(clock)
+            else:
+                clock += 8.0
+                times.append(clock)
+        for rgb, taken_at in zip(render_many(str(scene_path), camera, poses, seed + counter, exposure, noise), times):
             Image.fromarray(rgb).save(folder / f"IMG_{counter:04d}.JPG", quality=92,
-                                      exif=_iphone_exif(camera, model))
+                                      exif=_iphone_exif(camera, model, taken_at))
             counter += 1
         oracle_poses.update({f"{room_id}/IMG_{counter - len(poses) + k:04d}.JPG": pose for k, pose in enumerate(poses)})
     write_ground_truth(scene_path, out)

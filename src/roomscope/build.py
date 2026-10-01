@@ -203,7 +203,8 @@ def build_room(room: RoomGeometry, sigma: _Sigma) -> tuple[model.Room, list[mode
 
 def build_plan(capture_id: str, profile: TierProfile, rooms: list[RoomGeometry], drift: model.DriftReport,
                source_app: str | None = None, frames_used: int | None = None,
-               capture_notes: list[str] | None = None) -> model.Plan:
+               capture_notes: list[str] | None = None,
+               extra_adjacency: list[tuple[str, str]] | None = None) -> model.Plan:
     multipliers, table_id = load_calibration(profile.tier)
     sigma = _Sigma(profile, multipliers)
     results = [build_room(room, sigma) for room in rooms]
@@ -222,6 +223,11 @@ def build_plan(capture_id: str, profile: TierProfile, rooms: list[RoomGeometry],
                 adjacency.append(model.Adjacency(room.id, raw.connects_to,
                                                  [opening.id, f"{raw.partner_key[0]}/o{raw.partner_key[1]}"],
                                                  round(float(raw.confidence), 3)))
+
+    # Rooms placed through a doorway whose door wasn't measured on both sides (photo
+    # threshold pairs): the connection is known, the opening ids are not.
+    for a, b in extra_adjacency or []:
+        adjacency.append(model.Adjacency(a, b, [], 0.8))
 
     total = float(sum(r.floor_area.value for r in built))
     total_sigma = float(np.sqrt(sum(r.floor_area.half_width ** 2 for r in built))) / model.z_for_level(model.DEFAULT_CI_LEVEL)

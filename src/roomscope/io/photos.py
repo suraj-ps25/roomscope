@@ -40,6 +40,8 @@ class Photo:
     # Camera-to-world rotation when known (views from one on-the-spot turn).
     rotation: np.ndarray | None = None
     timestamp: float | None = None
+    # Capture time from EXIF (seconds since the epoch), for pairing doorway shots.
+    taken_at: float | None = None
 
 
 def processing_size(width: int, height: int, long_side: int = LONG_SIDE) -> tuple[int, int]:
@@ -57,10 +59,29 @@ def _focal_35(image: Image.Image) -> float | None:
     return float(value) if value else None
 
 
+EXIF_DATETIME_ORIGINAL = 0x9003
+EXIF_SUBSEC_ORIGINAL = 0x9291
+
+
+def _taken_at(image: Image.Image) -> float | None:
+    from datetime import datetime
+    try:
+        ifd = image.getexif().get_ifd(EXIF_IFD)
+        stamp = ifd.get(EXIF_DATETIME_ORIGINAL)
+        if not stamp:
+            return None
+        seconds = datetime.strptime(str(stamp).strip(), "%Y:%m:%d %H:%M:%S").timestamp()
+        sub = str(ifd.get(EXIF_SUBSEC_ORIGINAL) or "").strip()
+        return seconds + (float(f"0.{sub}") if sub.isdigit() else 0.0)
+    except Exception:
+        return None
+
+
 def load_photo(path: Path, room: str) -> Photo:
     with Image.open(path) as raw:
         exif_model = raw.getexif().get(EXIF_MODEL)
         focal35 = _focal_35(raw)
+        taken_at = _taken_at(raw)
         upright = ImageOps.exif_transpose(raw).convert("RGB")
     original = np.array(upright)
     height, width = original.shape[:2]
@@ -71,7 +92,7 @@ def load_photo(path: Path, room: str) -> Photo:
         fx_full = focal35 * np.hypot(width, height) / FULL_FRAME_DIAGONAL_MM
         K = np.array([[fx_full * w / width, 0, (w - 1) / 2], [0, fx_full * h / height, (h - 1) / 2], [0, 0, 1.0]])
         fov = float(np.degrees(2 * np.arctan(w / (2 * K[0, 0]))))
-    return Photo(path, room, small, K, fov, original, str(exif_model) if exif_model else None)
+    return Photo(path, room, small, K, fov, original, str(exif_model) if exif_model else None, taken_at=taken_at)
 
 
 def read_photo_folders(root: str | Path) -> dict[str, list[Photo]]:
