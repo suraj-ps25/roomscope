@@ -51,6 +51,9 @@ def _load_depth(path: Path) -> np.ndarray:
     return raw.astype(np.float32) / 1000.0
 
 
+PREFETCH_ROWS_PER_PASS = 5000
+
+
 class VideoFrames:
     """Decodes only the RGB frames the pipeline asks for, once, into a JPEG cache."""
 
@@ -66,8 +69,10 @@ class VideoFrames:
         if not missing:
             return
         self.cache.mkdir(parents=True, exist_ok=True)
-        for start in range(0, len(missing), 200):
-            chunk = missing[start:start + 200]
+        # One pass for everything asked for: each pass decodes the video from its start, so
+        # a few hundred rows in chunks cost a full decode per chunk (minutes on a long scan).
+        for start in range(0, len(missing), PREFETCH_ROWS_PER_PASS):
+            chunk = missing[start:start + PREFETCH_ROWS_PER_PASS]
             expr = "+".join(f"eq(n\\,{r})" for r in chunk)
             staging = self.cache / "staging"
             staging.mkdir(exist_ok=True)
