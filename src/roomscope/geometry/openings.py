@@ -42,6 +42,7 @@ JAMB_MIN_POINTS = 20
 JAMB_BASE_SIGMA_M = 0.003
 EDGE_FALLBACK_SIGMA_M = 0.015
 THROUGH_SAMPLES = 4000
+FLOOR_BEYOND_SHARE = 0.4
 
 
 @dataclass
@@ -145,8 +146,10 @@ def _accumulate(frame: Frame, pose: np.ndarray, walls: list[_Wall], rng: np.rand
         # A ray that lands on the floor beyond the wall plane went through a doorway, even
         # if it landed only a few centimetres past the face (the threshold, the next room's
         # floor seen at a steep angle).
-        on_floor_beyond = ~noreturn & (behind > tol.opening_face_m) & (end_z < wall.floor_z + 0.05)
-        face = ~noreturn & (np.abs(behind) <= tol.opening_face_m)
+        # From one standpoint at an oblique angle those rays land only centimetres past the
+        # face, inside the wall-face tolerance, so the margin here is tighter.
+        on_floor_beyond = ~noreturn & (behind > FLOOR_BEYOND_SHARE * tol.opening_face_m) & (end_z < wall.floor_z + 0.05)
+        face = ~noreturn & (np.abs(behind) <= tol.opening_face_m) & ~on_floor_beyond
         recess = ~noreturn & (behind > tol.opening_face_m) & (behind <= tol.opening_recess_m) & ~on_floor_beyond
         through = ~noreturn & ((behind > tol.opening_recess_m) | on_floor_beyond)
         size = shape[0] * shape[1]
