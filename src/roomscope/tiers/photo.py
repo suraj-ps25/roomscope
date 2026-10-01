@@ -384,7 +384,8 @@ def _finish_room(room, photos, frames, agreement, notes, timing) -> RoomReconstr
         if layout is None:
             layout = room_layout(region, cloud, PHOTO_TOL)
     if layout is not None:
-        openings, opening_notes = detect_openings(layout, region, frames, poses, PHOTO_TOL)
+        openings, opening_notes = detect_openings(layout, region, frames, poses, PHOTO_TOL,
+                                                  doorways=_threshold_spots(layout, frames, poses))
         notes += opening_notes
     else:
         notes.append("room layout could not be recovered from these photos")
@@ -422,6 +423,24 @@ def room_headings(reconstructions: dict, orientations: dict) -> dict[str, float]
         yaw = np.arctan2(relative[1, 0], relative[0, 0])
         headings[name] = float(np.round(yaw / (np.pi / 2)) * (np.pi / 2))
     return headings
+
+
+THRESHOLD_SPOT_M = 0.15
+
+
+def _threshold_spots(layout, frames, poses) -> list[tuple[int, float]]:
+    """Cameras standing on a wall line (a doorway threshold shot; corner shots stand ~0.3 m
+    in): (wall index, position along that wall)."""
+    spots = []
+    for frame in frames:
+        point = poses[frame.index][:2, 3]
+        for k, line in enumerate(layout.lines):
+            start = layout.polygon[k]
+            length = float(np.linalg.norm(layout.polygon[(k + 1) % len(layout.polygon)] - start))
+            along = float((point - start) @ line.direction)
+            if abs(float(line.normal @ point - line.offset)) < THRESHOLD_SPOT_M and 0 <= along <= length:
+                spots.append((k, along))
+    return spots
 
 
 THRESHOLD_PAIR_S = 12.0
@@ -479,6 +498,49 @@ def threshold_links(folders: dict, usable: dict) -> list:
     return links
 
 
+def _door_near(rec, point: np.ndarray, reach: float = 0.8):
+    best, best_gap = None, reach
+    for k, o in enumerate(rec.openings):
+        if o.kind not in ("door", "opening"):
+            continue
+        line, start = rec.layout.lines[o.wall], rec.layout.polygon[o.wall]
+        centre = start + line.direction * (o.u0 + o.u1) / 2
+        gap = float(np.linalg.norm(centre - point))
+        if gap < best_gap:
+            best, best_gap = (k, o, centre), gap
+    return best
+
+
+def _transfer_doors(usable: dict, links: list) -> list[str]:
+    """A doorway goes through the wall: when a threshold pair joins two rooms and only one
+    side measured the door (the other saw it too obliquely), the other side gets the same
+    opening on its own wall, at the same place, with the same width and intervals."""
+    from dataclasses import replace
+
+    notes = []
+    for link in links:
+        point_b = link.transform.inverse().apply(link.point_a[None])[0]
+        found_a = _door_near(usable[link.a], link.point_a)
+        found_b = _door_near(usable[link.b], point_b)
+        if (found_a is None) == (found_b is None):
+            continue
+        if found_a is not None:
+            source, target, door_found, to_target = link.a, usable[link.b], found_a, link.transform.inverse()
+        else:
+            source, target, door_found, to_target = link.b, usable[link.a], found_b, link.transform
+        _, door, centre = door_found
+        centre_t = to_target.apply(centre[None])[0]
+        lines = target.layout.lines
+        wall = min(range(len(lines)), key=lambda k: abs(lines[k].normal @ centre_t - lines[k].offset))
+        middle = float((centre_t - target.layout.polygon[wall]) @ lines[wall].direction)
+        half = (door.u1 - door.u0) / 2
+        target.openings.append(replace(door, room=target.layout.id, wall=wall, u0=middle - half, u1=middle + half,
+                                       v0=target.layout.floor_z, v1=target.layout.floor_z + (door.v1 - door.v0),
+                                       confidence=0.7 * door.confidence, partner=None, connects_to=None))
+        notes.append(f"{target.layout.id}: door taken from the {source} side of the shared doorway ({2 * half:.2f} m)")
+    return notes
+
+
 def plan_from_photo_sets(folders: dict, capture_id: str, profile, source_app: str,
                          extra_notes: list[str] | None = None, orientations: dict | None = None) -> "PhotoResult":
     """Per-room photo sets (from folders, or from the room turns found in a video) ->
@@ -505,8 +567,10 @@ def plan_from_photo_sets(folders: dict, capture_id: str, profile, source_app: st
     if headings:
         log("stitch", "room headings from the video: " + ", ".join(f"{n} {np.degrees(h):.0f}" for n, h in headings.items()))
     fixed = threshold_links(folders, usable) if not orientations else []
+    transfer_notes = []
     if fixed:
         log("stitch", "threshold photo pairs: " + ", ".join(f"{l.a}-{l.b}" for l in fixed))
+        transfer_notes = _transfer_doors(usable, fixed)
     stitched = stitch({n: (r.layout, r.openings, r.cloud) for n, r in usable.items()}, headings, fixed)
     timing["stitch"] = round(time.perf_counter() - start, 2)
 
@@ -554,7 +618,8 @@ def plan_from_photo_sets(folders: dict, capture_id: str, profile, source_app: st
     extra = [(a, b) for a, b in stitched.fixed_links if tuple(sorted((a, b))) not in door_linked]
     plan = build_plan(capture_id, profile, geometries, drift, source_app=source_app, extra_adjacency=extra,
                       frames_used=index, capture_notes=(extra_notes or [])
-                      + ([f"no layout recovered for: {', '.join(failed)}"] if failed else []) + stitched.notes)
+                      + ([f"no layout recovered for: {', '.join(failed)}"] if failed else []) + stitched.notes
+                      + transfer_notes)
     plan.timing_s = timing
     return PhotoResult(plan, reconstructions, stitched)
 

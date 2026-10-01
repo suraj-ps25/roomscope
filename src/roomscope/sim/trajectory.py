@@ -311,6 +311,8 @@ def photo_views(scene: SceneSpec, room_id: str, eye_height: float = 1.5) -> list
         # Across the room toward its far corner (protocol), so the shot overlaps the corners'.
         far = max(scene.room(room_id).polygon, key=lambda corner: float(np.linalg.norm(corner - eye)))
         target = eye + (far - eye) * 0.8
-        drop = np.tan(np.radians(5)) * float(np.linalg.norm(target - eye))
+        # Tilted up a little: from a small room's corners the floor and the ceiling don't
+        # both fit, so the threshold shots are the ones that see the ceiling.
+        drop = -np.tan(np.radians(12)) * float(np.linalg.norm(target - eye))
         views.append((f"threshold_{door.id.rstrip('~')}", look_at([*eye, eye_height], [*target, eye_height - drop])))
     return views[:8]

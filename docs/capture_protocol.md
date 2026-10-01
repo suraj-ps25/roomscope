@@ -55,7 +55,8 @@ the camera.
      really in frame, especially in a small room; if not, step back into the corner.
    - **Then, at every doorway into another room:** stand **on the threshold** and take
      **one photo into each room, back to back** (turn round between them), each pointing
-     across that room toward its far corner. The two go into the two rooms' folders.
+     across that room toward its far corner and **tilted up a little** so the ceiling is in
+     it (in a small room the corner photos can't show floor and ceiling together). The two go into the two rooms' folders.
      They are how the rooms are joined: both were taken from one spot, so the plan knows
      exactly where each room sits relative to the other.
 3. Hand-off: make **one folder per room** on the Mac, named after the room

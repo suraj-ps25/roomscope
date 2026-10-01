@@ -131,7 +131,7 @@ def _accumulate(frame: Frame, pose: np.ndarray, walls: list[_Wall], rng: np.rand
         ranges = t_wall * np.linalg.norm(dirs, axis=1)
         u = (hit[:, :2] - wall.start) @ wall.line.direction
         v = hit[:, 2]
-        keep = ok & (ranges < MAX_RANGE_M) & (u >= 0) & (u < wall.length) & (v >= wall.floor_z) & (v < wall.ceiling_z)
+        keep = ok & (ranges < tol.max_range_m) & (u >= 0) & (u < wall.length) & (v >= wall.floor_z) & (v < wall.ceiling_z)
         if not keep.any():
             continue
         shape = wall.evidence.face.shape
@@ -163,11 +163,16 @@ def _accumulate(frame: Frame, pose: np.ndarray, walls: list[_Wall], rng: np.rand
             wall.evidence.through_cells.append(cells)
 
 
-def detect_openings(layout: RoomLayout, region: RoomRegion, frames: list[Frame],
-                    poses: dict[int, np.ndarray], tol: Tolerances = LIDAR_TOL) -> tuple[list[Opening], list[str]]:
+def detect_openings(layout: RoomLayout, region: RoomRegion | None, frames: list[Frame],
+                    poses: dict[int, np.ndarray], tol: Tolerances = LIDAR_TOL,
+                    doorways: list[tuple[int, float]] | None = None) -> tuple[list[Opening], list[str]]:
+    """doorways: (wall index, position along it) of places known to be doorways (a photo
+    taken standing on the threshold). An opening found there is a door; where none was
+    found, a relaxed search runs around that spot."""
     walls = _walls_of(layout)
     rng = np.random.default_rng(0)
-    inside = [f for f in frames if region.contains(poses[f.index][None, :2, 3], dilate_cells=2)[0]] or frames
+    inside = frames if region is None else \
+        [f for f in frames if region.contains(poses[f.index][None, :2, 3], dilate_cells=2)[0]] or frames
     for frame in inside:
         _accumulate(frame, poses[frame.index], walls, rng, tol)
     room_tree = cKDTree(layout.points.points)
@@ -176,7 +181,47 @@ def detect_openings(layout: RoomLayout, region: RoomRegion, frames: list[Frame],
         found, wall_notes = _extract(layout, wall, room_tree, tol)
         openings += found
         notes += wall_notes
+    for wall_index, u in doorways or []:
+        here = [o for o in openings if o.wall == wall_index and o.kind != "mirror" and o.u0 - 0.3 <= u <= o.u1 + 0.3]
+        if here:
+            for o in here:
+                if o.kind == "window":
+                    o.kind, o.v0, o.sigma_v0 = "door", layout.floor_z, 0.003
+                    notes.append(f"wall {wall_index}: opening at a doorway threshold is a door (its bottom was not seen)")
+            continue
+        found = _doorway_at(layout, walls[wall_index], u, tol)
+        if found is not None:
+            openings.append(found)
+            notes.append(f"wall {wall_index}: door found at a doorway threshold ({found.width:.2f} m)")
     return openings, notes
+
+
+DOORWAY_SCORE = 0.35
+
+
+def _doorway_at(layout: RoomLayout, wall: _Wall, u: float, tol: Tolerances) -> Opening | None:
+    """Relaxed search for a door known to be at u along this wall: the run of columns
+    around u where open evidence outweighs wall face between 0.3 m and door-head height."""
+    ev = wall.evidence
+    band = slice(int(0.3 / GRID_M), int(1.9 / GRID_M))
+    open_votes = (ev.through + ev.noreturn + 0.5 * ev.recess)[:, band].sum(axis=1)
+    total = (ev.face + ev.recess + ev.through + ev.noreturn)[:, band].sum(axis=1)
+    score = np.divide(open_votes, total, out=np.zeros(len(total)), where=total > 0)
+    centre = int(np.clip(u / GRID_M, 0, len(score) - 1))
+    if score[max(centre - 5, 0):centre + 6].max(initial=0) < DOORWAY_SCORE:
+        return None
+    start = centre + int(np.argmax(score[max(centre - 5, 0):centre + 6] >= DOORWAY_SCORE)) - min(centre, 5)
+    lo = hi = start
+    while lo > 0 and score[lo - 1] >= DOORWAY_SCORE:
+        lo -= 1
+    while hi < len(score) - 1 and score[hi + 1] >= DOORWAY_SCORE:
+        hi += 1
+    u0, u1 = lo * GRID_M, (hi + 1) * GRID_M
+    if u1 - u0 < 0.5 or u1 - u0 > 2.0:
+        return None
+    opening = _refine(layout, wall, "door", u0, u1, layout.floor_z, layout.floor_z + 2.0, tol)
+    opening.confidence = 0.6
+    return opening
 
 
 def _extract(layout: RoomLayout, wall: _Wall, room_tree: cKDTree,
