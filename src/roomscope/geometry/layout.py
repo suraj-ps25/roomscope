@@ -166,6 +166,27 @@ def fit_wall(points: Cloud, inward: np.ndarray, anchor: np.ndarray, span: tuple[
     return WallLine(normal, offset, spread / np.sqrt(effective), int(good.sum()), spread)
 
 
+CEILING_LAYER_M = 0.05
+CEILING_CELL_M = 0.1
+
+
+def _ceiling_level(points: np.ndarray) -> tuple[float, float]:
+    """The ceiling layer covering most of the room, not the densest one. Where part of a
+    ceiling is lowered (a bulkhead over a kitchen or hall) both layers are dense; the room's
+    ceiling height is the one over most of its floor, and the bottoms of wall cabinets,
+    dense but small, never win."""
+    z = points[:, 2]
+    layer = np.floor(z / CEILING_LAYER_M).astype(np.int64)
+    cells = np.floor(points[:, :2] / CEILING_CELL_M).astype(np.int64)
+    keys = np.unique(np.stack([layer, cells[:, 0], cells[:, 1]], axis=1), axis=0)
+    layers, area = np.unique(keys[:, 0], return_counts=True)
+    # Neighbouring layers belong together: a level straddling a bin edge.
+    combined = area + np.array([area[layers == l + 1].sum() + area[layers == l - 1].sum() for l in layers]) * 0.5
+    best = layers[np.argmax(combined)]
+    near = np.abs(z - (best + 0.5) * CEILING_LAYER_M) < 1.5 * CEILING_LAYER_M
+    return _level(z[near])
+
+
 def _level(values: np.ndarray) -> tuple[float, float]:
     level = robust_level(values, window=0.02)
     near = values[np.abs(values - level) < 0.02]
@@ -190,7 +211,7 @@ def room_layout(region: RoomRegion, cloud: Cloud, tol: Tolerances = LIDAR_TOL) -
     walls_seen = points.points[np.abs(points.normals[:, 2]) < 0.3, 2]
     seen_top = float(np.percentile(walls_seen, 99)) if len(walls_seen) else floor_z + 2.0
     if ceiling_rows.sum() >= 50:
-        ceiling_z, ceiling_sigma = _level(points.points[ceiling_rows, 2])
+        ceiling_z, ceiling_sigma = _ceiling_level(points.points[ceiling_rows])
         band_top = ceiling_z
     else:
         # Not observed: a prior (most ceilings are 2.4-3.0 m), never below the walls that were
