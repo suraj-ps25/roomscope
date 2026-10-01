@@ -23,10 +23,13 @@ class Tolerances:
     # doorway. Sparse tiers see doorway bottoms obliquely, where those rays land only
     # centimetres past the plane.
     floor_beyond_m: float = 0.04
+    # Longest ray that votes on a wall: the sensor's range for LiDAR; image depth reaches
+    # the far walls of a room, which is what corner photos are for.
+    max_range_m: float = 4.5
 
 
 LIDAR_TOL = Tolerances()
 VIDEO_TOL = Tolerances(wall_search_m=0.45, wall_inlier_m=0.07, opening_face_m=0.09, opening_recess_m=0.40,
-                       jamb_window_m=0.12, min_votes=2, min_room_frames=4, jamb_reach_m=0.4, floor_beyond_m=0.036)
+                       jamb_window_m=0.12, min_votes=2, min_room_frames=4, jamb_reach_m=0.4, floor_beyond_m=0.036, max_range_m=12.0)
 PHOTO_TOL = Tolerances(wall_search_m=0.60, wall_inlier_m=0.10, opening_face_m=0.12, opening_recess_m=0.45,
-                       jamb_window_m=0.15, min_votes=1, min_room_frames=1, jamb_reach_m=0.4, floor_beyond_m=0.048)
+                       jamb_window_m=0.15, min_votes=1, min_room_frames=1, jamb_reach_m=0.4, floor_beyond_m=0.048, max_range_m=12.0)
