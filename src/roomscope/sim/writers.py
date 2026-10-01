@@ -56,6 +56,19 @@ def _iphone_exif(camera: Camera, model: str) -> Image.Exif:
     return exif
 
 
+def write_oracle(scene_path: str | Path, out: Path, camera: Camera, poses: dict, fps: float | None = None) -> None:
+    """Benchmark-only sidecar: the true camera and poses, so `roomscope run --oracle-depth`
+    can swap the monocular depth model for rendered truth and separate pipeline error from
+    depth-model error. The pipeline never reads it otherwise."""
+    import shutil
+    folder = out / "oracle"
+    folder.mkdir(parents=True, exist_ok=True)
+    shutil.copy(scene_path, folder / "scene.yaml")
+    np.savez_compressed(folder / "poses.npz", keys=np.array(list(poses)), poses=np.asarray(list(poses.values())))
+    (folder / "camera.json").write_text(json.dumps({"width": camera.width, "height": camera.height, "fx": camera.fx,
+                                                    "fy": camera.fy, "cx": camera.cx, "cy": camera.cy, "fps": fps}))
+
+
 def write_ground_truth(scene_path: str | Path, out: Path) -> None:
     out.mkdir(parents=True, exist_ok=True)
     (out / "ground_truth.json").write_text(json.dumps(ground_truth(load_scene(scene_path)), indent=2))
@@ -67,6 +80,7 @@ def write_photo_tier(scene_path: str | Path, out: Path, rooms: list[str] | None 
     scene = load_scene(scene_path)
     camera = Camera.iphone_main(*size)
     counter = 1
+    oracle_poses = {}
     for room_id in rooms or [r.id for r in scene.rooms]:
         views = photo_views(scene, room_id)
         folder = out / room_id
@@ -76,7 +90,9 @@ def write_photo_tier(scene_path: str | Path, out: Path, rooms: list[str] | None 
             Image.fromarray(rgb).save(folder / f"IMG_{counter:04d}.JPG", quality=92,
                                       exif=_iphone_exif(camera, model))
             counter += 1
+        oracle_poses.update({f"{room_id}/IMG_{counter - len(poses) + k:04d}.JPG": pose for k, pose in enumerate(poses)})
     write_ground_truth(scene_path, out)
+    write_oracle(scene_path, out, camera, oracle_poses)
 
 
 def write_lidar_tier(scene_path: str | Path, out: Path, route: list[str], seed: int = 0,
@@ -126,7 +142,7 @@ def write_video_tier(scene_path: str | Path, out: Path, route: list[str], fps: f
                      size: tuple[int, int] = (1280, 720), seed: int = 0,
                      exposure: float = 1.0, noise: float = 0.01) -> None:
     scene = load_scene(scene_path)
-    trajectory = walkthrough(scene, route, fps=fps, seed=seed)
+    trajectory = walkthrough(scene, route, fps=fps, seed=seed, perimeter=False)
     # Video is a 16:9 crop of the 4:3 sensor at the same horizontal FOV, plus a little
     # stabilisation crop.
     camera = Camera.iphone_main(*size)
@@ -143,3 +159,4 @@ def write_video_tier(scene_path: str | Path, out: Path, route: list[str], fps: f
     if encoder.wait() != 0:
         raise RuntimeError("ffmpeg failed while encoding the synthetic walkthrough")
     write_ground_truth(scene_path, out)
+    write_oracle(scene_path, out, camera, {f"{k}": pose for k, pose in enumerate(trajectory.poses)}, fps)

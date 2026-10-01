@@ -42,6 +42,11 @@ def _run(args: argparse.Namespace) -> int:
     out.mkdir(parents=True, exist_ok=True)
     tier = args.tier or detect_tier(capture)
     print(f"roomscope: {capture} -> {out} ({tier} tier)")
+    if args.oracle_depth:
+        from .benchmark.oracle import OracleDepth
+        from .tiers import photo as photo_tier
+        photo_tier.depth_source = OracleDepth(capture)
+        print("  oracle depth: monocular depth replaced by rendered truth (benchmark ablation)")
 
     if tier == "lidar":
         from .io.arkitscenes import is_arkitscenes, read_arkitscenes
@@ -55,7 +60,7 @@ def _run(args: argparse.Namespace) -> int:
         plan = run_photo(capture).plan
     elif tier == "video":
         from .tiers.video import run_video
-        plan = run_video(capture, drift_correction=not args.no_drift_correction).plan
+        plan = run_video(capture).plan
     else:
         print(f"{tier} tier is not wired into the CLI yet (see docs/architecture.md).", file=sys.stderr)
         return 2
@@ -82,6 +87,8 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--tier", choices=TIERS, help="force a tier (default: auto-detect)")
     run.add_argument("--no-drift-correction", action="store_true",
                      help="use capture poses as-is (ablation for the drift report)")
+    run.add_argument("--oracle-depth", action="store_true",
+                     help="synthetic captures only: true depth instead of the depth model (ablation)")
     run.set_defaults(func=_run)
 
     ev = sub.add_parser("eval", help="score a plan.json against ground truth (gates, intervals)")

@@ -15,8 +15,9 @@ move furniture during the capture. Mirrors, glass and shiny floors need nothing 
 2. Stand in the first room, near where you came in. **Remember this spot.** Press record.
 3. In **every** room, one after another:
    - Walk to the **middle of the room** and **turn slowly on the spot through one full
-     circle** (about 10 seconds). While turning, tilt the phone a little up and down so
-     the floor edges and ceiling edges both come into view.
+     circle** (about 10 seconds). On the way round, tilt the phone **up until you see the
+     ceiling and down until you see the floor**, twice (in a small room you have to tilt
+     well over: from the middle of a bathroom the floor is only in view below ~45°).
    - Then walk **slowly around the room about 1 m from the walls**, phone pointing at
      the walls, sweeping gently up and down.
    - Go **through each doorway slowly** (2–3 seconds), phone pointing ahead.
@@ -34,9 +35,13 @@ the camera.
 ## B. Video (any iPhone 15 or newer)
 
 1. Camera app → **Video**, lens at **1×**, phone held **sideways (landscape)**.
-2. Walk the whole property exactly as in A, steps 2–5, in **one clip**: mid-room full
-   turn in each room, slow walk around the walls, slow through doorways, finish where you
-   started. Move slowly; blur ruins video.
+2. One clip for the whole property. In **every** room: walk to the **middle**, **stop**,
+   and **turn slowly on the spot through one full circle** (about 10 seconds), tilting
+   up to the ceiling and down to the floor twice on the way round, exactly as in A step 3.
+   Then **walk normally to the next room**, phone pointing where you are going; no need
+   to walk around the walls. The turns are what gets measured: each one is found in the
+   clip automatically and becomes that room. Turn slowly (blur ruins video), keep turning
+   until you are past where you started, and do the turn **once per room**.
 3. Hand-off: AirDrop the clip to the Mac. On the phone, tap *Options* first and turn on
    **All Photos Data** so the file keeps its original quality and metadata.
 

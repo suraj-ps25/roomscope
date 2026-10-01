@@ -120,15 +120,18 @@ class Trajectory:
 
 
 SPIN_SECONDS = 9.0
+MAX_YAW_RATE_DEG_S = 90.0
+SPIN_PITCH_RAD = 0.75
 
 
 def walkthrough(scene: SceneSpec, route: list[str], fps: float = 6.0, speed: float = 0.35,
-                eye_height: float = 1.45, seed: int = 0) -> Trajectory:
+                eye_height: float = 1.45, seed: int = 0, perimeter: bool = True) -> Trajectory:
     """route: rooms in visiting order, e.g. [hallway, living, hallway, bedroom, hallway].
     Follows the capture protocol: on entering a room, walk to its middle and turn slowly
     through a full circle (sees opposite walls seconds apart, so room dimensions do not
     rest on long-term odometry), then walk the perimeter facing the walls. Transitions go
-    through the connecting door."""
+    through the connecting door. perimeter=False is the video protocol: the turn only, then
+    walk on to the next room."""
     rng = np.random.default_rng(seed)
     waypoints: list[tuple[np.ndarray, str, str]] = []  # (xy, room, mode)
 
@@ -137,6 +140,8 @@ def walkthrough(scene: SceneSpec, route: list[str], fps: float = 6.0, speed: flo
         middle = standable(scene, room, room.polygon.mean(axis=0))
         waypoints.append((middle, room.id, "walk"))
         waypoints.append((middle, room.id, "spin"))
+        if not perimeter:
+            return middle
         inset = min(0.9, 0.3 * float(dims.min()))
         loop = inset_polygon(room.polygon, inset)
         start = int(np.argmin(np.linalg.norm(loop - middle, axis=1)))
@@ -181,7 +186,7 @@ def walkthrough(scene: SceneSpec, route: list[str], fps: float = 6.0, speed: flo
             headings.append(tangent)
             spins.append(0.0)
 
-    poses = []
+    eyes, yaws, pitches = [], [], []
     travelled = 0.0
     for i, (xy, mode, tangent, spin) in enumerate(zip(positions, modes, headings, spins)):
         if i:
@@ -190,10 +195,10 @@ def walkthrough(scene: SceneSpec, route: list[str], fps: float = 6.0, speed: flo
         eye = np.array([xy[0], xy[1], eye_height + bob]) + rng.normal(0, 0.004, 3)
         base_yaw = np.arctan2(tangent[1], tangent[0])
         if mode == "spin":
-            # Slow full turn on the spot, tilting up and down twice to catch the floor and
-            # ceiling junctions.
+            # Slow full turn on the spot, tilting up to the ceiling and down to the floor
+            # twice on the way round (protocol step).
             yaw = base_yaw + spin
-            pitch = 0.4 * np.sin(2 * spin)
+            pitch = SPIN_PITCH_RAD * np.sin(2 * spin)
         elif mode == "scan":
             # Face the walls (right of travel on a CCW loop) and sweep up/down and sideways.
             yaw = base_yaw - np.pi / 2 + 0.45 * np.sin(travelled * 2 * np.pi / 1.6)
@@ -201,7 +206,16 @@ def walkthrough(scene: SceneSpec, route: list[str], fps: float = 6.0, speed: flo
         else:
             yaw = base_yaw + 0.1 * np.sin(travelled * 2 * np.pi / 1.5)
             pitch = -0.05
-        poses.append(pose_from_yaw_pitch(eye, yaw, pitch))
+        eyes.append(eye)
+        yaws.append(yaw)
+        pitches.append(pitch)
+    # People turn at most ~90 deg/s while walking; waypoint corners would otherwise snap
+    # the heading round in a frame or two.
+    yaws = np.unwrap(np.asarray(yaws))
+    limit = np.radians(MAX_YAW_RATE_DEG_S) / fps
+    for i in range(1, len(yaws)):
+        yaws[i] = yaws[i - 1] + np.clip(yaws[i] - yaws[i - 1], -limit, limit)
+    poses = [pose_from_yaw_pitch(eye, yaw, pitch) for eye, yaw, pitch in zip(eyes, yaws, pitches)]
     poses = _smooth_rotations(np.asarray(poses), window=5)
     timestamps = np.arange(len(poses)) / fps
     return Trajectory(timestamps, poses, rooms)
