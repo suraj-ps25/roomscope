@@ -179,6 +179,65 @@ every entry is scored by the corrected ruler.
   neighbours within 4 cm) 3 cm to 1 m in front, or in a recess with no wall face, masked;
   cracks kept 3 cm clear of masks; per-view colour gains solved from overlaps.
 
+### The declared fix: real-capture openings (`7e5e7be` → `71b6f9c`, `1b84c55`)
+
+Declared before any code changed, in [`fix_declaration.md`](fix_declaration.md): the
+worst gate in the benchmark, real LiDAR openings within 2 cm, at 2 of 29. Two evidenced
+causes, multi-sash windows split into several openings and a floor-level sill classed as
+a window, and a prediction: no new passes, phantoms 12 → 9, misses 6 → 5, scored 29 → 26.
+
+Every real recording, before (`7e5e7be`) and after (`1b84c55`), each run at its own
+commit and scored by the same evaluator:
+
+| | predicted | measured |
+|---|---|---|
+| within 2 cm | 2 (unchanged) | 2 |
+| matched, width off | 10 | 10 |
+| missed | 6 → 5 | 6 → 5 |
+| phantom | 12 → 9 | 12 → 9 |
+| openings scored | 29 → 26 | 29 → 26 |
+| gate share | 7% → 8% | 7% → 8% |
+
+**The first version missed one prediction**, and it was caught. In `71b6f9c` the bathroom
+door came out as a 0.48 m "window", not the predicted 0.82 m door. The cause was the plane
+adjustment, which also uses openings, as landmarks: there the floor-level rule replaced the
+door's measured sill with an assumed floor, the poses moved, and the final opening came out
+different. `1b84c55` keeps the adjustment's landmarks raw and applies the fix to the plan's
+openings only; with that, every predicted number is met.
+
+**Why the gate still fails:** the fix moved detection (18 misses and phantoms → 14), not
+widths. The remaining failures are the ones the declaration set aside:
+- the bathroom door, which no recording filmed above 0.75 m;
+- widths ±5 cm, of both signs, at the LiDAR's 256×192 depth resolution;
+- plans whose wall count differs from the survey's, so their openings can't be placed on
+  the truth's walls.
+
+Per-recording tables: `real-openings-*` in [`results/`](../benchmark/fix_loop/results/).
+
+### real-ceiling-scale: every real ceiling read low (`7f5bd43` → `561189d`)
+
+- **Symptom:** all 14 real-room ceilings were low against laser truth, none high. Median
+  −2.0 cm on dev and −1.7 cm on held-out; 4 of 10 held-out rooms within 1.5 cm.
+- **Isolation:** similarity ICP of each dev recording's fused cloud on its laser scan
+  needs a scale of 1.0087, 1.0088 and 1.0106 on the three that register well. Uniform
+  shrinking of that size explains the walls running short too. The ceiling fit is not
+  what's wrong: the depth is.
+- **Fix:** a per-device depth-scale calibration measured on the dev visits only (×1.0088),
+  applied to that device's depth only. Uncalibrated devices are left alone.
+- **Prediction** (stated before measuring the held-out visits): held-out ceilings within
+  1.5 cm about 4 → 7 of 10.
+
+| every real recording | before | after |
+|---|---|---|
+| held-out ceilings within 1.5 cm | 4/10 | **8/10** |
+| held-out median ceiling error | −1.73 cm | +0.21 cm |
+| dev ceilings within 1.5 cm | 0/4 | 4/4 |
+| held-out wall error, median | 6.3 cm | 3.1 cm |
+| held-out interval coverage, median | 50% | 71% |
+
+Better than predicted. The gate still fails: it asks for every room, and two held-out rooms
+remain at −1.6 and −2.7 cm.
+
 ### Earlier fixes (in the history, found the same way)
 
 These predate the regeneration script, so their before/after is recorded in the commit
