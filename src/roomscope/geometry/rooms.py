@@ -298,6 +298,27 @@ def _under_ceiling(cloud: Cloud) -> tuple[np.ndarray, np.ndarray]:
     return vertical & (z > local - UNDER_CEILING_M) & (z < local - 0.02) & (z > HEADER_MIN_Z - 0.1), local - z
 
 
+CEILING_SEEN_POINTS = 500
+NO_CEILING_BAND_M = 1.0
+DOORWAY_GAP_M = (0.5, 1.3)
+
+
+def _doorway_bridges(traces: list[WallSegment]) -> list[WallSegment]:
+    """Barriers across door-sized gaps between traces on one line. Without the header band a
+    doorway is just a gap in the wall, and rooms would leak into each other through it."""
+    bridges = []
+    for i, a in enumerate(traces):
+        for b in traces[i + 1:]:
+            if abs(np.sin(a.angle - b.angle)) > 0.05 or abs(a.offset - b.offset * np.cos(a.angle - b.angle)) > 2 * COLLINEAR_M:
+                continue
+            # b's extent in a's along-wall coordinate (its tangent may be flipped).
+            ends = sorted(float(b.point(t) @ a.tangent) for t in (b.start, b.end))
+            gap_start, gap_end = (a.end, ends[0]) if ends[0] >= a.end else (ends[1], a.start)
+            if DOORWAY_GAP_M[0] <= gap_end - gap_start <= DOORWAY_GAP_M[1]:
+                bridges.append(WallSegment(a.angle, a.offset, gap_start, gap_end))
+    return bridges
+
+
 FACE_DROP_M = 0.15
 FACE_DROP_SHARE = 0.3
 
@@ -389,15 +410,26 @@ def segment_rooms(cloud: Cloud, frames, poses: dict[int, np.ndarray],
     xy = cloud.points[:, :2]
     origin = xy.min(axis=0) - 0.5
     shape = tuple((np.ceil((xy.max(axis=0) + 0.5 - origin) / CELL)).astype(int))
-    wall, below = _under_ceiling(cloud)
-    # Barriers are long straight wall traces that reach the ceiling. Real walls and door
-    # headers do; clutter above door height mostly doesn't (shower screens and rails,
-    # tall cabinets, pendant lamps) and would otherwise cut a room into pieces.
     vertical = np.abs(cloud.normals[:, 2]) < 0.3
-    traces = [s for s in wall_segments(cloud.points[wall, :2], cloud.normals[wall, :2]) if s.end - s.start >= BARRIER_MIN_M]
-    reach = vertical & (cloud.points[:, 2] > HEADER_MIN_Z - 0.1)
-    traces = [s for s in traces if _drops_from_ceiling(s, cloud.points[reach, :2], cloud.normals[reach, :2], below[reach])]
-    traces = complete_corners(extend_along_walls(traces, cloud.points[vertical, :2], cloud.normals[vertical, :2]))
+    ceiling_seen = int(((cloud.normals[:, 2] < -0.9) & (cloud.points[:, 2] > 1.8)).sum()) >= CEILING_SEEN_POINTS
+    if ceiling_seen:
+        # Barriers are long straight wall traces that reach the ceiling. Real walls and door
+        # headers do; clutter above door height mostly doesn't (shower screens and rails,
+        # tall cabinets, pendant lamps) and would otherwise cut a room into pieces.
+        wall, below = _under_ceiling(cloud)
+        traces = [s for s in wall_segments(cloud.points[wall, :2], cloud.normals[wall, :2]) if s.end - s.start >= BARRIER_MIN_M]
+        reach = vertical & (cloud.points[:, 2] > HEADER_MIN_Z - 0.1)
+        traces = [s for s in traces if _drops_from_ceiling(s, cloud.points[reach, :2], cloud.normals[reach, :2], below[reach])]
+        traces = complete_corners(extend_along_walls(traces, cloud.points[vertical, :2], cloud.normals[vertical, :2]))
+    else:
+        # The ceiling was never looked at (a phone held level), so there is no band above
+        # the doors to trace walls in. Walls are traced above most furniture instead, and
+        # the doorways, whose headers were never seen, are closed where two traces on one
+        # line leave a door-sized gap.
+        wall = vertical & (cloud.points[:, 2] > NO_CEILING_BAND_M)
+        traces = [s for s in wall_segments(cloud.points[wall, :2], cloud.normals[wall, :2]) if s.end - s.start >= BARRIER_MIN_M]
+        traces = complete_corners(extend_along_walls(traces, cloud.points[vertical, :2], cloud.normals[vertical, :2]))
+        traces = traces + _doorway_bridges(traces)
     wall_grid = ndimage.binary_dilation(_draw_segments(traces, origin, shape), structure=np.ones((3, 3)))
     free = (carve_free_space(frames, poses, origin, shape) >= 3) & ~wall_grid
     roofed = _roofed(cloud, origin, shape)
