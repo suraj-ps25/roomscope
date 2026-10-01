@@ -272,14 +272,15 @@ CEILING_CELL_M = 0.25
 UNDER_CEILING_M = 0.25
 
 
-def _under_ceiling(cloud: Cloud) -> np.ndarray:
-    """Vertical-surface points in the band just below the local ceiling. Ceiling height is
-    mapped per 25 cm cell (rooms differ; bathrooms are often lower) and holes are filled
-    from the nearest observed cell. Falls back to a fixed above-door band without ceiling."""
+def _under_ceiling(cloud: Cloud) -> tuple[np.ndarray, np.ndarray]:
+    """Vertical-surface points in the band just below the local ceiling, and each point's
+    depth below that ceiling. Ceiling height is mapped per 25 cm cell (rooms differ;
+    bathrooms are often lower) and holes are filled from the nearest observed cell. Falls
+    back to a fixed above-door band without ceiling."""
     vertical = np.abs(cloud.normals[:, 2]) < 0.3
     ceiling = (cloud.normals[:, 2] < -0.9) & (cloud.points[:, 2] > 1.8)
     if ceiling.sum() < 200:
-        return vertical & (cloud.points[:, 2] > HEADER_MIN_Z)
+        return vertical & (cloud.points[:, 2] > HEADER_MIN_Z), np.full(len(cloud.points), np.inf)
     xy = cloud.points[:, :2]
     origin = xy.min(axis=0)
     shape = tuple(np.floor((xy.max(axis=0) - origin) / CEILING_CELL_M).astype(int) + 1)
@@ -294,7 +295,26 @@ def _under_ceiling(cloud: Cloud) -> np.ndarray:
     ij = np.floor((xy - origin) / CEILING_CELL_M).astype(int)
     local = level[ij[:, 0], ij[:, 1]]
     z = cloud.points[:, 2]
-    return vertical & (z > local - UNDER_CEILING_M) & (z < local - 0.02) & (z > HEADER_MIN_Z - 0.1)
+    return vertical & (z > local - UNDER_CEILING_M) & (z < local - 0.02) & (z > HEADER_MIN_Z - 0.1), local - z
+
+
+FACE_DROP_M = 0.15
+FACE_DROP_SHARE = 0.3
+
+
+def _drops_from_ceiling(seg: WallSegment, points: np.ndarray, normals: np.ndarray, below: np.ndarray) -> bool:
+    """A wall, or the header over a doorway, comes down from the ceiling by more than
+    FACE_DROP_M over a fair share of its length. A step in the ceiling (a lowered section
+    over a wardrobe or a bay) is a vertical face just as straight and long, but only a few
+    centimetres tall; as a barrier it would cut the room in two at the step."""
+    on_line = (np.abs(points @ seg.normal - seg.offset) < COLLINEAR_M) & (np.abs(normals @ seg.normal) > 0.9)
+    along = points[on_line] @ seg.tangent
+    deep = along[below[on_line] > FACE_DROP_M]
+    bins = np.arange(seg.start, seg.end + 0.1, 0.1)
+    if len(bins) < 2:
+        return True
+    covered = np.histogram(deep, bins=bins)[0] > 0
+    return float(covered.mean()) >= FACE_DROP_SHARE
 
 
 ROOF_REACH_M = 0.25
@@ -369,14 +389,15 @@ def segment_rooms(cloud: Cloud, frames, poses: dict[int, np.ndarray],
     xy = cloud.points[:, :2]
     origin = xy.min(axis=0) - 0.5
     shape = tuple((np.ceil((xy.max(axis=0) + 0.5 - origin) / CELL)).astype(int))
-    wall = _under_ceiling(cloud)
+    wall, below = _under_ceiling(cloud)
     # Barriers are long straight wall traces that reach the ceiling. Real walls and door
     # headers do; clutter above door height mostly doesn't (shower screens and rails,
     # tall cabinets, pendant lamps) and would otherwise cut a room into pieces.
     vertical = np.abs(cloud.normals[:, 2]) < 0.3
-    traces = complete_corners(extend_along_walls(
-        [s for s in wall_segments(cloud.points[wall, :2], cloud.normals[wall, :2]) if s.end - s.start >= BARRIER_MIN_M],
-        cloud.points[vertical, :2], cloud.normals[vertical, :2]))
+    traces = [s for s in wall_segments(cloud.points[wall, :2], cloud.normals[wall, :2]) if s.end - s.start >= BARRIER_MIN_M]
+    reach = vertical & (cloud.points[:, 2] > HEADER_MIN_Z - 0.1)
+    traces = [s for s in traces if _drops_from_ceiling(s, cloud.points[reach, :2], cloud.normals[reach, :2], below[reach])]
+    traces = complete_corners(extend_along_walls(traces, cloud.points[vertical, :2], cloud.normals[vertical, :2]))
     wall_grid = ndimage.binary_dilation(_draw_segments(traces, origin, shape), structure=np.ones((3, 3)))
     free = (carve_free_space(frames, poses, origin, shape) >= 3) & ~wall_grid
     roofed = _roofed(cloud, origin, shape)
