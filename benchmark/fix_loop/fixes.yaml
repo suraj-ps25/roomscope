@@ -45,3 +45,33 @@
   flags: []
   before: 470c532
   after: 822fab3
+
+- id: lidar-loop-tear
+  title: Wrong loop closures tore the pose graph at the end of a capture
+  symptom: >-
+    LiDAR, flat_a seed 1 (seed 0 passed): openings 5/10, adjacency wrong, walls up to
+    2.6 cm, and a phantom strip of hallway outside the flat. The last 4 s of corrected
+    poses were up to 55 cm from truth.
+  cause: >-
+    Seven ICP loop closures from the final fragments back to the start had slid along the
+    hallway. The Cauchy loss was applied to every edge, so the solver switched off the
+    one odometry edge (73 -> 74) that disagreed with them by 0.6 m and tore the graph there.
+  fix: robust weights (IRLS) on loop closures only; odometry is never robustified
+  capture: data/captures/simbench/flat_a_lidar_d1_s1
+  flags: []
+  before: d53e04a
+  after: 7633a27
+
+- id: photo-depth-cap
+  title: Far walls vanished from photo reconstructions
+  symptom: >-
+    Photo tier with true depth, Replica room0: 3.27 x 3.90 m for a 4.58 x 7.71 m room, with
+    "no wall seen" on two sides. The synthetic hallway came out 3.1 m long for 5.0.
+  cause: >-
+    Every depth map was cut at 4 m, the LiDAR's useful range, for every tier. A corner photo
+    of a long room is mostly far wall.
+  fix: fuse takes a depth limit; the image tiers use 12 m
+  capture: data/captures/replica/room0_photo
+  flags: [--oracle-depth]
+  before: bdb7174
+  after: a1a7bf5
