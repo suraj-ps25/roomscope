@@ -36,7 +36,7 @@ passing tests: 1.5–2.5 min with model weights cached (the first download is ~7
 | Wall length | max 1.3–2.0 cm per capture | large room: median 1.9–2.3 cm, worst 4.5–6.5 cm; small 5-wall room: 7–25 cm | scanned rooms, depth model: worst wall median 11.2%, 0 of 8 rooms within ±3%; true depth: 1.9%, 5 of 8 | scanned rooms, depth model: worst wall median 9.0%, 4 of 8 within ±8%; true depth: 2.0%, 6 of 8 |
 | Ceiling height | max 0.24–1.16 cm (gate 1.5 cm: passes on all three) | 0.6–4.2 cm low; 4 of 10 within 1.5 cm | flat, true depth: max 1.3 cm | flat, true depth: max 0.65 cm |
 | Floor area | within 0.75% | – | scanned rooms, depth model: median 13.9% | scanned rooms, depth model: median 13.8% |
-| Opening width ≤ 2 cm | 7/9, 9/9, 9/9 (25 of 27; seed 0's two glass windows ~3 cm off) | 2 of 33 (misses and phantoms) | 9/9 on the flat with true depth | 9/9 on the flat with true depth |
+| Opening width ≤ 2 cm | 7/9, 9/9, 9/9 (25 of 27; seed 0's two glass windows ~3 cm off) | 2 of 30 (misses and phantoms) | 9/9 on the flat with true depth | 9/9 on the flat with true depth |
 | Stitch | adjacency correct on all three; footprint within 0.75% | a connection found in 4 of 6 recordings with two or more rooms (adjacency itself not surveyed) | correct with true depth | correct with true depth |
 | Repeatability (1 cm or 0.5%) | 16/16 walls for one pair, 11/16 and 5/16 for the pairs with seed 1 (worst 3.3 cm): limited by the sensor's per-capture depth scale bias (σ 0.2%) | real bathroom (dev): 2–3 of 4 walls, worst 4.9 cm | – | – |
 | Drift ablation | off: walls out by up to 1.8 m, adjacency wrong on all three | – | no long trajectory | no trajectory |

@@ -3,21 +3,21 @@
   "tier": "lidar",
   "level": 0.9,
   "multipliers": {
-    "wall_length": 4.209460853963831,
-    "ceiling_height": 2.0608860226532277,
-    "opening_width": 1.998971801491689,
-    "floor_area": 4.02206413183386
+    "wall_length": 4.234549940165199,
+    "ceiling_height": 2.104741449120687,
+    "opening_width": 2.0351318332510893,
+    "floor_area": 4.0220641318338775
   },
   "samples": {
     "wall_length": 64,
     "ceiling_height": 16,
-    "opening_width": 31,
+    "opening_width": 32,
     "floor_area": 16
   },
   "held_out_coverage": {
     "wall_length": 0.828125,
     "ceiling_height": 0.8125,
-    "floor_area": 0.9375,
-    "opening_width": 0.9032258064516129
+    "floor_area": 0.875,
+    "opening_width": 0.875
   }
 }

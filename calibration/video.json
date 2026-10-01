@@ -4,8 +4,8 @@
   "level": 0.9,
   "multipliers": {
     "wall_length": 8.342044386146314,
-    "ceiling_height": 5.777561681369873,
-    "floor_area": 6.926226549775938
+    "ceiling_height": 5.777561681369867,
+    "floor_area": 6.926226549775928
   },
   "samples": {
     "wall_length": 48,

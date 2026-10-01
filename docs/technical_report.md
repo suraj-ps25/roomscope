@@ -181,7 +181,7 @@ before being looked at and run once (one runtime-only change while running them,
 - **Held-out:** in the one large room with laser truth (≈18 m²), walls within a median
   2 cm, worst 4.5–6.5 cm; ceilings 1.2–2.5 cm low. Small irregular rooms (a 5-wall
   bathroom) score 7–25 cm, partly from phantom sliver walls that break the wall
-  sequence; openings mostly miss or are phantoms (2 of 33 within 2 cm); 5–15 false damage
+  sequence; openings mostly miss or are phantoms (2 of 30 within 2 cm); 5–15 false damage
   regions per recording; all three recordings of one visit (27–35 s each) never closed a
   room. Interval coverage on held-out visits is a median 33% against a 90% target.
 
