@@ -4,8 +4,10 @@ For every measurement with ground truth, the normalised score is |value - truth|
 where sigma is the propagated (uncalibrated) half width / z. The multiplier is the
 (n + 1)-corrected 90th percentile of those scores divided by z, so an interval of
 multiplier * propagated half width covers the truth with >= 90% probability on
-exchangeable data. Coverage is reported leave-one-capture-out, so a capture never
-calibrates the intervals it is scored on.
+exchangeable data. Coverage is reported leave-one-property-out (captures sharing a truth
+file are one property), so neither a capture nor a repeat capture of the same rooms
+calibrates the intervals it is scored on. Wall lengths the truth marks as not measured
+end to end (laser surveys: a face that could not be found) are left out.
 """
 
 from __future__ import annotations
@@ -42,7 +44,10 @@ def pairs(plan: dict, gt: dict, applied: dict[str, float] | None = None) -> dict
         shift = _cyclic_alignment(lengths, truth["walls"], pred_doors, truth_doors)
         if shift is not None:
             n = len(truth["walls"])
+            measured = truth.get("survey", {}).get("length_measured") or [True] * n
             for k in range(n):
+                if not measured[k]:
+                    continue
                 m = pred["walls"][(k + shift) % n]["length"]
                 out["wall_length"].append((m["value"] - truth["walls"][k], _uncalibrated_sigma(m, applied.get("wall_length", 1))))
         m = pred["ceiling_height"]
@@ -67,21 +72,23 @@ def multiplier(scores: list[tuple[float, float]], level: float = DEFAULT_CI_LEVE
     return float(max(normalised[rank] / z_for_level(level), 1.0))
 
 
-def calibrate(runs: list[tuple[dict, dict]], tier: str, applied: dict[str, float] | None = None) -> dict:
+def calibrate(runs: list[tuple[dict, dict]], tier: str, applied: dict[str, float] | None = None,
+              groups: list[str] | None = None) -> dict:
     per_capture = [pairs(plan, gt, applied) for plan, gt in runs]
+    groups = groups or [str(i) for i in range(len(runs))]
     pooled: dict[str, list] = defaultdict(list)
     for capture in per_capture:
         for q, values in capture.items():
             pooled[q] += values
     multipliers = {q: multiplier(pooled[q]) for q in QUANTITIES if len(pooled[q]) >= 5}
 
-    # Leave one capture out: calibrate on the rest, check coverage on the one left out.
+    # Leave one property out: calibrate on the rest, check coverage on the one left out.
     held_out: dict[str, list[bool]] = defaultdict(list)
     z = z_for_level(DEFAULT_CI_LEVEL)
     for i, capture in enumerate(per_capture):
         rest: dict[str, list] = defaultdict(list)
         for j, other in enumerate(per_capture):
-            if j != i:
+            if groups[j] != groups[i]:
                 for q, values in other.items():
                     rest[q] += values
         for q, values in capture.items():
@@ -100,14 +107,15 @@ def calibrate(runs: list[tuple[dict, dict]], tier: str, applied: dict[str, float
 
 
 def run(tier: str, specs: list[str], out: str | None) -> dict:
-    runs, applied = [], None
+    runs, applied, groups = [], None, []
     for spec in specs:
         plan_path, truth_path = spec.split(":", 1)
         runs.append((json.loads(Path(plan_path).read_text()), load_ground_truth(truth_path)))
+        groups.append(str(Path(truth_path).resolve()))
     existing = Path(__file__).resolve().parents[3] / "calibration" / f"{tier}.json"
     if existing.exists():
         applied = json.loads(existing.read_text())["multipliers"]
-    table = calibrate(runs, tier, applied)
+    table = calibrate(runs, tier, applied, groups)
     if out:
         Path(out).parent.mkdir(parents=True, exist_ok=True)
         Path(out).write_text(json.dumps(table, indent=2))

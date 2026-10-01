@@ -50,8 +50,18 @@ $PY benchmark/run_replica.py --out "$OUT/replica"
 echo "== depth model scale per scene"
 [[ -f $OUT/depth_scale.json ]] || $PY benchmark/depth_model_scale.py --out "$OUT/depth_scale.json"
 
-echo "== interval calibration (split conformal, leave-one-capture-out coverage)"
+echo "== real iPad LiDAR recordings against laser truth (ARKitScenes; dev and held-out visits)"
+# Fetch: python benchmark/real/fetch_arkitscenes.py <visit ids in benchmark/ground_truth/arkitscenes_*.yaml>
+$PY benchmark/real/run_real.py --out "$OUT/real"
+
+echo "== interval calibration (split conformal, leave-one-property-out coverage)"
 lidar_runs=(); for s in 0 1 2; do lidar_runs+=("$OUT/lidar/flat_a_lidar_d1_s${s}_corrected/plan.json:data/captures/simbench/flat_a_lidar_d1_s$s/ground_truth.json"); done
+# Real recordings calibrate only from the dev visits; the held-out visits never do.
+while read -r visit; do
+  for video in $(grep -l "^$visit$" data/public/arkitscenes/*/visit.txt | xargs -n1 dirname | xargs -n1 basename); do
+    [[ -f $OUT/real/$video/metrics.json ]] && lidar_runs+=("$OUT/real/$video/plan.json:benchmark/ground_truth/arkitscenes_$visit.yaml")
+  done
+done < benchmark/real/dev_visits.txt
 $RS calibrate lidar "${lidar_runs[@]}" --out "$OUT/calibration_lidar.json" > /dev/null
 for tier in photo video; do
   runs=("$OUT/flat_a_${tier}_model/plan.json:data/captures/sim_flat_a_$tier/ground_truth.json")

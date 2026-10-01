@@ -155,6 +155,60 @@ def damage_section(bench: Path) -> list[str]:
     return lines + [""]
 
 
+def real_section(bench: Path) -> list[str]:
+    summary = _load(bench / "real" / "summary_real.json")
+    lines = ["## Real captures: iPad Pro LiDAR against laser scans (ARKitScenes)", ""]
+    if not summary:
+        return lines + ["(not run: fetch the visits with `benchmark/real/fetch_arkitscenes.py`)", ""]
+    dev = set((ROOT / "benchmark" / "real" / "dev_visits.txt").read_text().split())
+    lines += ["Real iPad Pro recordings of real rooms (Apple's ARKitScenes: LiDAR depth, ARKit poses, 640x480 colour),",
+              "scored against laser-scanner truth surveyed with `benchmark/real/laser_truth.py`: the plan names the walls,",
+              "the laser scan measures them (faces, corners, floor-to-ceiling height over the whole room, openings with a",
+              "mirror test). Every survey was checked against its overlay (`docs/real/`). The same LiDAR tier as for",
+              "Stray Scanner captures, unchanged. **dev** visits were used to find and fix bugs and to fit the LiDAR",
+              "interval calibration; **held-out** visits were chosen by a fixed rule before being looked at (one laser",
+              "scan, three or more recordings) and run once, with no change made after. Wall errors are on lengths the",
+              "laser measured end to end; rooms are undamaged, so every damage region reported is a false positive.", ""]
+    rows = []
+    for run in summary["runs"]:
+        split = "dev" if run["visit"] in dev else "held-out"
+        label = f"{run['visit']} / {run['recording']} ({split})"
+        metrics = run.get("metrics")
+        if not metrics:
+            rows.append({"visit / recording": label, "walls median (cm)": "no room", "walls max (cm)": "–",
+                         "ceiling (cm)": "–", "openings ≤ 2 cm": "–", "damage regions": "–", "interval coverage": "–"})
+            continue
+        walls, o = metrics["walls_measured"], metrics["openings"]
+        rows.append({"visit / recording": label, "walls median (cm)": _cm(walls["median_abs_m"], 1),
+                     "walls max (cm)": _cm(walls["max_abs_m"], 1),
+                     "ceiling (cm)": " ".join(f"{100 * v:+.1f}" for v in metrics["ceiling"]["per_room_m"].values()),
+                     "openings ≤ 2 cm": f"{o['passing']}/{o['scored']} (missed {o['missed']}, phantom {o['phantom']})",
+                     "damage regions": metrics["damage"]["false_positives"],
+                     "interval coverage": _pct(metrics["calibration"]["coverage"], 0)})
+    lines += _table(rows, "visit / recording") + [""]
+    for split in ("dev", "held-out"):
+        chosen = [r["metrics"] for r in summary["runs"] if r.get("metrics") and (r["visit"] in dev) == (split == "dev")]
+        if not chosen:
+            continue
+        walls = [m["walls_measured"]["max_abs_m"] for m in chosen]
+        ceilings = [abs(v) for m in chosen for v in m["ceiling"]["per_room_m"].values()]
+        covered = [m["calibration"]["coverage"] for m in chosen if m["calibration"]["coverage"] is not None]
+        opening_pass = sum(m["openings"]["passing"] for m in chosen)
+        opening_all = sum(m["openings"]["scored"] for m in chosen)
+        lines.append(f"- **{split}** ({len(chosen)} recordings with a room): worst wall median {_cm(float(np.median(walls)), 1)} cm; "
+                     f"ceiling within 1.5 cm on {sum(c <= 0.015 for c in ceilings)}/{len(ceilings)}; openings within 2 cm "
+                     f"{opening_pass}/{opening_all}; interval coverage median {_pct(float(np.median(covered)), 0)}"
+                     + (" (in-sample: these runs fitted the calibration)" if split == "dev" else "") + ".")
+    lines += ["", "Repeatability (recordings of the same room): walls agreeing within 1 cm or 0.5%.", ""]
+    rows = []
+    for pair in summary["repeatability"]:
+        scored = [w for w in pair["walls"] if "pass" in w]
+        rows.append({"pair": f"{pair['visit']}: {pair['a']} vs {pair['b']}",
+                     "walls passing": f"{sum(w['pass'] for w in scored)}/{len(scored)}" if scored else "different wall count",
+                     "worst difference (cm)": _cm(max(abs(w["difference"]) for w in scored), 1) if scored else "–"})
+    return lines + _table(rows, "pair") + [""]
+
+
 def calibration_section(bench: Path) -> list[str]:
     lines = ["## Interval calibration", "",
              "Propagated intervals (fit uncertainty through the geometry, plus the tier's scale budget) are scaled per tier",
@@ -192,7 +246,7 @@ def main() -> int:
              "the depth model's measured scale error on real iPad imagery. Gates are the brief's: openings ≤ 2 cm on",
              "≥ 85% (misses and phantoms count), ceiling ≤ 1.5 cm, walls ±3% (video) / ±8% (photo), footprint ±8%.", ""]
     lines += (lidar_section(bench) + flat_section(bench) + replica_section(bench) + depth_section(bench)
-              + damage_section(bench) + calibration_section(bench))
+              + damage_section(bench) + real_section(bench) + calibration_section(bench))
     Path(args.out).write_text("\n".join(lines) + "\n")
     print(f"wrote {args.out}")
     return 0
