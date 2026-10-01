@@ -300,7 +300,10 @@ def carve_free_space(frames, poses: dict[int, np.ndarray], origin: np.ndarray, s
 
 
 def segment_rooms(cloud: Cloud, frames, poses: dict[int, np.ndarray],
-                  min_frames_inside: int = MIN_FRAMES_INSIDE) -> tuple[list[RoomRegion], list[str]]:
+                  min_frames_inside: int = MIN_FRAMES_INSIDE, single_room: bool = False) -> tuple[list[RoomRegion], list[str]]:
+    """single_room: the capture is known to be one room (a photo folder). Nothing is dropped
+    for enclosure or camera presence; the best-supported region is returned, else all of
+    the carved free space."""
     """cloud and poses in the plan frame."""
     xy = cloud.points[:, :2]
     origin = xy.min(axis=0) - 0.5
@@ -331,17 +334,25 @@ def segment_rooms(cloud: Cloud, frames, poses: dict[int, np.ndarray],
         inside = np.nonzero(cam_label == label)[0]
         if area < MIN_ROOM_AREA:
             continue
-        if len(inside) < min_frames_inside:
+        if len(inside) < min_frames_inside and not single_room:
             notes.append(f"dropped a {area:.1f} m2 region the camera never entered "
                          "(seen through a doorway or in a mirror)")
             continue
         support = _wall_support(mask, wall_grid)
-        if support < MIN_WALL_SUPPORT:
+        if support < MIN_WALL_SUPPORT and not single_room:
             notes.append(f"dropped a {area:.1f} m2 region only {support:.0%} enclosed by walls (open space seen "
                          "through an opening, not a room)")
             continue
         kept.append((label, inside))
 
+    if single_room:
+        if kept:
+            kept = [max(kept, key=lambda item: (len(item[1]), (labels == item[0]).sum()))]
+        elif free.any():
+            labels = ndimage.label(ndimage.binary_closing(free, structure=np.ones((5, 5))))[0]
+            biggest = int(np.argmax(np.bincount(labels.ravel())[1:])) + 1
+            kept = [(biggest, np.nonzero(cam_label >= 0)[0])]
+            notes.append("photo room: no enclosed region; using all carved free space")
     kept_cells = np.isin(labels, [label for label, _ in kept])
     regions = []
     for label, inside in kept:

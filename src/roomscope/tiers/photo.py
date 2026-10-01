@@ -22,12 +22,15 @@ import numpy as np
 from ..capture import Frame
 from ..geometry.cloud import fuse
 from ..geometry.layout import RoomLayout, room_layout
+from ..geometry.sparse_layout import rectangle_layout
 from ..geometry.openings import Opening, detect_openings
 from ..geometry.rooms import RoomRegion, align, segment_rooms
 from ..geometry.tolerances import PHOTO_TOL
 from ..io.photos import Photo
 
 MOGE_VIEW_SPREAD = 0.069
+CONSISTENT_SHARE = 0.5
+INCONSISTENT_SCALE_SIGMA = 0.25
 SCALE_BIAS_BUDGET = 0.02
 PHOTO_VOXEL = 0.03
 
@@ -48,6 +51,40 @@ class RoomReconstruction:
 
 def scale_sigma(n_views: int) -> float:
     return float(np.hypot(MOGE_VIEW_SPREAD / np.sqrt(max(n_views, 1)), SCALE_BIAS_BUDGET))
+
+
+def view_agreement(frames: list[Frame]) -> float:
+    """Multi-view consistency: project each view's points into the others and count how
+    often their depth agrees within 10%. Broken poses (a narrow, repetitive corridor can
+    defeat multi-view reconstruction) show up as low agreement."""
+    agree, total = 0, 0
+    for a in frames:
+        depth_a = a.depth()
+        rows, cols = np.nonzero(depth_a > 0)
+        if len(rows) == 0:
+            continue
+        pick = np.random.default_rng(a.index).choice(len(rows), min(2000, len(rows)), replace=False)
+        rows, cols = rows[pick], cols[pick]
+        z = depth_a[rows, cols]
+        K = a.depth_K
+        cam = np.stack([(cols - K[0, 2]) / K[0, 0] * z, (rows - K[1, 2]) / K[1, 1] * z, z], 1)
+        world = cam @ a.pose[:3, :3].T + a.pose[:3, 3]
+        for b in frames:
+            if b is a:
+                continue
+            local = (world - b.pose[:3, 3]) @ b.pose[:3, :3]
+            Kb = b.depth_K
+            w, h = b.depth_size
+            u = Kb[0, 0] * local[:, 0] / np.maximum(local[:, 2], 1e-6) + Kb[0, 2]
+            v = Kb[1, 1] * local[:, 1] / np.maximum(local[:, 2], 1e-6) + Kb[1, 2]
+            seen = (local[:, 2] > 0.2) & (u >= 0) & (v >= 0) & (u < w - 1) & (v < h - 1)
+            if seen.sum() < 50:
+                continue
+            measured = b.depth()[v[seen].astype(int), u[seen].astype(int)]
+            ok = measured > 0
+            agree += int(np.sum(ok & (np.abs(local[seen, 2] - measured) < 0.1 * measured)))
+            total += int(ok.sum())
+    return agree / total if total else 0.0
 
 
 def gravity_rotation(normals: np.ndarray, poses: list[np.ndarray]) -> np.ndarray:
@@ -116,6 +153,7 @@ def reconstruct_room(room: str, photos: list[Photo], first_index: int = 0) -> Ro
                             load_rgb=(lambda im=photo.original: im), load_depth=(lambda d=depth: d),
                             load_confidence=(lambda c=confidence: c), depth_K=view.K, depth_size=(width, height)))
 
+    agreement = view_agreement(frames)
     raw = fuse(frames, {f.index: f.pose for f in frames}, voxel=PHOTO_VOXEL, stride=1, min_confidence=1)
     gravity = np.eye(4)
     gravity[:3, :3] = gravity_rotation(raw.normals, [f.pose for f in frames])
@@ -126,21 +164,29 @@ def reconstruct_room(room: str, photos: list[Photo], first_index: int = 0) -> Ro
     poses = {k: alignment.pose(v) for k, v in poses.items()}
 
     notes = [f"{len(photos)} photos, scale correction {correction:.3f}"
-             + (f", per-view ratio spread {np.std(ratios):.1%}" if len(ratios) > 1 else "")]
-    regions, seg_notes = segment_rooms(cloud, frames, poses, min_frames_inside=PHOTO_TOL.min_room_frames)
+             + (f", per-view ratio spread {np.std(ratios):.1%}" if len(ratios) > 1 else "")
+             + f", multi-view agreement {agreement:.0%}"]
+    room_sigma = scale_sigma(len(photos))
+    if agreement < CONSISTENT_SHARE:
+        room_sigma = max(room_sigma, INCONSISTENT_SCALE_SIGMA)
+        notes.append(f"photos do not agree with each other ({agreement:.0%} consistent): reconstruction "
+                     f"unreliable, intervals widened to {room_sigma:.0%} scale")
+    regions, seg_notes = segment_rooms(cloud, frames, poses, min_frames_inside=PHOTO_TOL.min_room_frames, single_room=True)
     notes += seg_notes
     region = max(regions, key=lambda r: (r.frames_inside, r.area)) if regions else None
     layout = openings = None
+    cameras = np.array([poses[f.index][:2, 3] for f in frames])
+    layout = rectangle_layout(room, cloud, cameras)
     if region is not None:
         region.id = room
-        layout = room_layout(region, cloud, PHOTO_TOL)
+        if layout is None:
+            layout = room_layout(region, cloud, PHOTO_TOL)
     if layout is not None:
         openings, opening_notes = detect_openings(layout, region, frames, poses, PHOTO_TOL)
         notes += opening_notes
     else:
         notes.append("room layout could not be recovered from these photos")
-    return RoomReconstruction(room, frames, poses, region, layout, openings or [], scale_sigma(len(photos)),
-                              cloud, notes, timing)
+    return RoomReconstruction(room, frames, poses, region, layout, openings or [], room_sigma, cloud, notes, timing)
 
 
 def run_photo(root) -> "PhotoResult":
