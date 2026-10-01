@@ -86,6 +86,10 @@ This runs:
   the depth model and with rendered true depth (`--oracle-depth`, the ablation that
   separates pipeline error from depth-model error);
 - the depth model's metric scale on real iPad imagery;
+- the LiDAR tier on real iPad Pro recordings of real rooms (ARKitScenes), scored against
+  laser-scanner truth, on dev visits and on held-out visits run once
+  (`python benchmark/real/fetch_arkitscenes.py 471428 471425 423441 438802 467326` first,
+  about 20 GB);
 - per-tier interval calibration.
 
 It writes [`docs/benchmark_report.md`](docs/benchmark_report.md) from the metrics files
@@ -97,9 +101,10 @@ alone. Score a single run against truth with:
 
 This covers the brief's gates: opening widths ≤ 2 cm on ≥ 85% (missed and phantom
 openings count against), ceiling ≤ 1.5 cm, walls ±3% (video) and ±8% (photo),
-repeatability, adjacency, overlaps, footprint and interval coverage. Real captures with
-laser truth, and the head-to-head against magicplan, follow
-[`benchmark/README.md`](benchmark/README.md) and
+repeatability, adjacency, overlaps, footprint and interval coverage. Laser truth for a
+real recording is surveyed with `benchmark/real/laser_truth.py` (overlays in
+[`docs/real/`](docs/real)). Your own iPhone captures with tape or laser truth, and the
+head-to-head against magicplan, follow [`benchmark/README.md`](benchmark/README.md) and
 [`benchmark/head_to_head/`](benchmark/head_to_head/README.md).
 
 How failing numbers became fixes, each regenerable from its two commits:
@@ -117,7 +122,7 @@ needed (`scripts/setup.sh` pre-fetches them).
 | MapAnything (`facebook/map-anything-apache`) | Meta | Apache-2.0 | photo poses, only as the fallback when matches do not tie a room's photos together |
 | DINOv2 (loaded by MapAnything) | Meta | Apache-2.0 | image encoder |
 | Stray Scanner | Stray Robots | MIT (app) | LiDAR capture |
-| ARKitScenes | Apple | non-commercial research licence | depth-model scale on real iPad imagery (validation) |
+| ARKitScenes | Apple | non-commercial research licence | real iPad Pro LiDAR recordings and their laser scans (real benchmark); depth-model scale on real imagery |
 | Replica (culled meshes, via NICE-SLAM) | Meta | Replica research licence | scanned rooms for the photo/video benchmark (`scripts/fetch_replica.sh`) |
 
 Model outputs are cached by content hash and replay bit-for-bit. `ROOMSCOPE_CACHE=off`

@@ -104,3 +104,50 @@
   flags: []
   before: b31c18c
   after: 2d74357
+
+- id: real-ceiling-step
+  title: A ceiling step cut a real room in two
+  symptom: >-
+    Real iPad recording (ARKitScenes 47429912) of a bathroom, against laser truth: the room
+    came out 1.94 x 1.85 m for 2.72 x 1.98 m; one end of the room was missing.
+  cause: >-
+    The ceiling is lowered by 10 cm over one end. The vertical face of that step sat in
+    the band under the ceiling where barriers are traced, ran the full room width, and was
+    taken for a wall; the free space beyond it, entered by too few frames, was dropped.
+  fix: a barrier must come down from the local ceiling by more than 15 cm over 30% of its length
+  capture: data/public/arkitscenes/47429912
+  truth: benchmark/ground_truth/arkitscenes_471428.yaml
+  flags: []
+  before: 1ddba65
+  after: f2fa61a
+
+- id: real-damage-false-positives
+  title: Undamaged real rooms reported dozens of damage regions
+  symptom: >-
+    Real recording 47429922 of an undamaged living room: 59 damage regions (shelf and toy
+    edges as cracks, a plant as mould, view seams as stains). On the synthetic flat the
+    staged crack, above a door, was never seen (found only once the scorer checked where).
+  cause: >-
+    Views were ranked by how well they saw a surface's centre, so the strip above a door
+    went unseen; objects in front of a wall leaked colour into its orthophoto at the
+    LiDAR's depth resolution; mask outlines read as ridges; exposure steps between views
+    read as stains.
+  fix: coverage-chosen views, dense-geometry masks in front and in recesses, crack clearance from masks, per-view gain
+  capture: data/public/arkitscenes/47429922
+  truth: benchmark/ground_truth/arkitscenes_471425.yaml
+  flags: []
+  before: f57442f
+  after: ed27738
+
+- id: synthetic-damage-recall
+  title: The staged crack was never found (the same fix, on the synthetic flat)
+  symptom: >-
+    Full-resolution LiDAR capture of the flat, damage scored at the staged place: 2/3 found
+    and one false positive, a 0.49 m door-jamb edge that the old scorer had counted as the
+    staged crack.
+  cause: see real-damage-false-positives
+  fix: see real-damage-false-positives
+  capture: data/captures/sim_flat_a_lidar
+  flags: []
+  before: f57442f
+  after: ed27738

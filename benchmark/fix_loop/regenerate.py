@@ -55,13 +55,15 @@ def _headline(metrics: dict) -> dict:
         "adjacency correct": stitch["adjacency_correct"],
         "footprint error": round(stitch["footprint_error"], 4),
         "interval coverage": metrics["calibration"]["coverage"],
+        "damage found": f'{metrics["damage"]["found"]}/{metrics["damage"]["staged"]}',
+        "damage false positives": metrics["damage"]["false_positives"],
     }
 
 
 def regenerate(fix: dict) -> Path:
     base = ROOT / "runs" / "fix_loop" / fix["id"]
     capture = ROOT / fix["capture"]
-    truth = load_ground_truth(capture / "ground_truth.json")
+    truth = load_ground_truth(ROOT / fix["truth"] if "truth" in fix else capture / "ground_truth.json")
     rows = {}
     for side in ("before", "after"):
         src = _worktree(fix[side], base / side / "src")

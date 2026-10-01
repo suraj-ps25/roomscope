@@ -122,6 +122,63 @@ evaluator, so before and after are measured with the same ruler. Output goes to
   for a short synthetic hallway was wrong: it was this cap.
 - **Fix:** depth limits per tier (12 m for image depth), for fusion and for opening rays.
 
+### Real captures (ARKitScenes iPad Pro recordings, laser truth)
+
+The first run on real recordings with laser truth (`benchmark/real/`) failed in ways no
+synthetic capture had. The entries below were found on the two **dev** visits; the
+held-out visits were run after them. One change was made while running them: a 7-minute
+held-out recording sat in the pose-graph solve for over 20 minutes, and `cf09349` vectorised
+the solver's residuals (same algebra, agreeing to 1e-15; plans move by millimetres).
+Their results are from that commit; no other change was made for them.
+
+#### real-ceiling-step: a ceiling step cut a real room in two (`1ddba65` → `f2fa61a`)
+
+- **Symptom:** a bathroom recording came out 1.94 × 1.85 m; the laser says 2.72 × 1.98 m.
+- **Isolation:** our own fused cloud, overlaid on the laser slice, showed the whole room;
+  the plan stopped at y = 2.4 m. A slice just under the ceiling showed why: one end of the
+  room has a ceiling 10 cm lower, and the step's vertical face spans the room's width.
+- **Cause:** barriers are traced in the band under the local ceiling, where door headers
+  are. The step's face is just as straight and long as a header, but 10 cm tall.
+- **Fix:** a barrier must come down from the ceiling by more than 15 cm over 30% of its
+  length. Synthetic flat, three captures: unchanged within 0.2 cm.
+
+#### A fix that was reverted, and a guard that fixed nothing measurable (`14ba4c7`, `73414b4`)
+
+`14ba4c7` added a weak "rooms are square" prior on wall directions, for one real
+recording's worst wall (6.8 → 4.5 cm). Step 5 caught it moving one synthetic wall a
+fraction of a degree, enough to shift a glass window's jamb search by 2 cm (openings 9/9
+→ 8/9); `73414b4` removes it. The same commit stops the layout clean-up from dropping a
+wall when the room left would be implausible. It was written because a recording lost its
+door-and-window wall that way, but regenerating showed that happened only with the prior
+active: before and after the guard, without the prior, are identical. It stays as a guard
+and is not counted as a fix.
+
+#### The damage ruler was wrong (`f57442f`)
+
+Looking at real false positives led to the synthetic ones, and to the scorer: it matched
+staged damage by class and surface kind only. The committed benchmark's "crack found,
+−24% length" was a 0.49 m **door-jamb edge on another wall**; the staged crack, above the
+bedroom door, was never seen. Damage now counts only on the staged wall and within 15 cm
+of the staged extent. Rescored, the earlier run is 2/3 found with 1 false positive, not
+3/3 with none. This is a ruler fix, not a pipeline fix, so it has no regeneration entry:
+every entry is scored by the corrected ruler.
+
+#### real-damage-false-positives / synthetic-damage-recall (`f57442f` → `ed27738`)
+
+- **Symptom:** an undamaged real living room reported 59 damage regions; the synthetic
+  staged crack was never found.
+- **Isolation:** each region drawn on its orthophoto: shelf and toy edges as cracks, a
+  plant and a pendant lamp as mould, patches of differently exposed views as stains; on the
+  synthetic flat, the strip above the door was simply never rendered.
+- **Cause:** views ranked by how well they see a surface's *centre*; objects in front of a
+  wall leak colour at the LiDAR's depth resolution; a mask's outline is a dark ridge; the
+  phone's exposure changes between views. A first mask from "any point in front of the
+  wall" covered whole synthetic walls: depth edges scatter flying points everywhere in
+  front of them. Only dense geometry is an object.
+- **Fix:** views chosen greedily for coverage of a 15 cm lattice; dense geometry (8
+  neighbours within 4 cm) 3 cm to 1 m in front, or in a recess with no wall face, masked;
+  cracks kept 3 cm clear of masks; per-view colour gains solved from overlaps.
+
 ### Earlier fixes (in the history, found the same way)
 
 These predate the regeneration script, so their before/after is recorded in the commit
