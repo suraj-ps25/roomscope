@@ -59,6 +59,12 @@ for marker in data/public/arkitscenes/*/visit.txt; do
 done
 $PY benchmark/real/run_real.py --out "$OUT/real"
 
+echo "== assessors' sample captures (data/sample/, no ground truth: structure and timing only)"
+for capture in data/sample/*/*/; do
+  name=$(basename "$(dirname "$capture")")
+  [[ -f $OUT/samples/$name/plan.json ]] || $RS run "$capture" --out "$OUT/samples/$name" > /dev/null
+done
+
 echo "== interval calibration (split conformal, leave-one-property-out coverage)"
 lidar_runs=(); for s in 0 1 2; do lidar_runs+=("$OUT/lidar/flat_a_lidar_d1_s${s}_corrected/plan.json:data/captures/simbench/flat_a_lidar_d1_s$s/ground_truth.json"); done
 # Real recordings calibrate only from the dev visits; the held-out visits never do.
