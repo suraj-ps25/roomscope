@@ -51,7 +51,7 @@ def _load_depth(path: Path) -> np.ndarray:
     return raw.astype(np.float32) / 1000.0
 
 
-PREFETCH_ROWS_PER_PASS = 5000
+PREFETCH_ROWS_PER_PASS = 100
 
 
 class VideoFrames:
@@ -69,9 +69,22 @@ class VideoFrames:
         if not missing:
             return
         self.cache.mkdir(parents=True, exist_ok=True)
-        # One pass for everything asked for: each pass decodes the video from its start, so
-        # a few hundred rows in chunks cost a full decode per chunk (minutes on a long scan).
-        for start in range(0, len(missing), PREFETCH_ROWS_PER_PASS):
+        # One sequential decode for everything asked for. A frame-select filter decodes the
+        # video from its start on every call, and its expression can't hold a few hundred
+        # frames; per-chunk passes cost a full 1440p decode each, minutes on a long scan.
+        capture = cv2.VideoCapture(str(self.video))
+        if capture.isOpened():
+            wanted, row = set(missing), 0
+            while wanted and capture.grab():
+                if row in wanted:
+                    ok, image = capture.retrieve()
+                    if ok:
+                        cv2.imwrite(str(self.path(row)), image, [cv2.IMWRITE_JPEG_QUALITY, 95])
+                    wanted.discard(row)
+                row += 1
+            capture.release()
+            missing = sorted(wanted)
+        for start in range(0, len(missing), PREFETCH_ROWS_PER_PASS):   # frames OpenCV could not read
             chunk = missing[start:start + PREFETCH_ROWS_PER_PASS]
             expr = "+".join(f"eq(n\\,{r})" for r in chunk)
             staging = self.cache / "staging"
