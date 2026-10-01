@@ -3,7 +3,8 @@
 Ground truth comes from the mesh alone, not from the pipeline: floor and ceiling are the
 area-weighted modes of up- and down-facing triangles, the wall direction is the
 area-weighted mode of vertical normals modulo 90 degrees, and each side's wall is the
-outermost inward-facing vertical plane with real area behind it. Rooms with a small jog
+outermost inward-facing vertical plane with real area between 0.3 and 1.2 m (where a tape
+is held: below window sills, so windows set back in their recesses don't count). Rooms with a small jog
 (a pillar, a notch) are scored against their bounding rectangle; the tiers that use
 `rectangle_layout` produce the same.
 """
@@ -46,6 +47,9 @@ def room_truth(scene: MeshScene, name: str) -> dict:
     up_band = (normal[:, 2] < -0.95) & (z > floor + 2.0)
     ceiling = _mode(z[up_band], area[up_band])
     vertical = (np.abs(normal[:, 2]) < 0.1) & (z > floor + 0.3) & (z < ceiling - 0.2)
+    # Wall faces are measured as a tape would be (benchmark/README.md): at about 1 m, below
+    # window sills, so a run of windows and blinds set back in their recess doesn't count.
+    tape_band = vertical & (z < floor + 1.2)
     angles = np.mod(np.arctan2(normal[vertical, 1], normal[vertical, 0]), np.pi / 2)
     hist, edges = np.histogram(angles, bins=np.radians(np.arange(0, 90.25, 0.25)), weights=area[vertical])
     theta = float(edges[np.argmax(hist)] + np.radians(0.125))
@@ -56,7 +60,7 @@ def room_truth(scene: MeshScene, name: str) -> dict:
     sides = {}
     for axis in (0, 1):
         for sign in (1, -1):
-            facing = vertical & (local_normal[:, axis] * -sign > 0.95)
+            facing = tape_band & (local_normal[:, axis] * -sign > 0.95)
             coord = local[facing, axis]
             hist, edges = np.histogram(coord, bins=np.arange(coord.min() - 0.01, coord.max() + 0.02, 0.01), weights=area[facing])
             strong = np.nonzero(hist > 0.15 * hist.max())[0]

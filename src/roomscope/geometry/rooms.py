@@ -379,7 +379,8 @@ def segment_rooms(cloud: Cloud, frames, poses: dict[int, np.ndarray],
     for label, inside in kept:
         own = labels == label
         mask = _grow_to_walls(ndimage.binary_fill_holes(own), wall_grid | ~roofed, kept_cells & ~own)
-        regions.append(RoomRegion("", mask, origin, CELL, len(inside), int(frame_order[inside.min()])))
+        first = int(frame_order[inside.min()]) if len(inside) else int(frame_order.min())
+        regions.append(RoomRegion("", mask, origin, CELL, len(inside), first))
     regions.sort(key=lambda r: r.first_frame)
     for number, region in enumerate(regions, start=1):
         region.id = f"room_{number}"

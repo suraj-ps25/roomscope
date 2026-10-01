@@ -31,11 +31,14 @@ EFFECTIVE_POINTS = 50
 UNSEEN_SIGMA_M = 0.15
 FOOTPRINT_MARGIN_M = 0.05
 TYPICAL_CEILING_M = 2.5
+UPPER_BAND_M = 0.6
+UPPER_MIN_SHARE = 0.3
 
 
-def _side(points: np.ndarray, normals: np.ndarray, axis: int, sign: int, beyond: float) -> tuple[float, float, int] | None:
+def _side(points: np.ndarray, normals: np.ndarray, axis: int, sign: int, beyond: float,
+          heights: np.ndarray | None = None, ceiling_height: float | None = None) -> tuple[float, float, int] | None:
     """Wall on the +axis (sign=1) or -axis (sign=-1) side: points beyond `beyond` whose
-    normal faces back into the room."""
+    normal faces back into the room. heights: each point's height above the floor."""
     coord = points[:, axis]
     facing = normals[:, axis] * -sign > 0.85
     rows = facing & ((coord - beyond) * sign > 0.05)
@@ -62,6 +65,16 @@ def _side(points: np.ndarray, normals: np.ndarray, axis: int, sign: int, beyond:
     substantial = (support >= SUPPORT_SHARE * support.max()) & (extent >= EXTENT_SHARE * extent.max())
     if not substantial.any():
         substantial = support == support.max()
+    if heights is not None and ceiling_height is not None:
+        # A wall runs up to the ceiling; a built-in bench, a radiator cover or a run of low
+        # cupboards along it does not (Replica room0: a full-length sill bench 15 cm in
+        # front of the window wall). Prefer candidates with real support just under the
+        # ceiling, when any has it.
+        high = heights[rows] > ceiling_height - UPPER_BAND_M
+        top = np.array([np.sum((np.abs(values - c) < INLIER_M) & high) for c in centres])
+        reaches_up = top >= max(UPPER_MIN_SHARE * top.max(), 20)
+        if (substantial & reaches_up).any():
+            substantial &= reaches_up
     chosen = centres[substantial][np.argmin((centres[substantial] - beyond) * sign)]
     near = values[np.abs(values - chosen) < INLIER_M]
     offset = float(np.median(near))
@@ -77,12 +90,13 @@ def rectangle_layout(room: str, cloud: Cloud, cameras_xy: np.ndarray) -> RoomLay
     ceiling_z, ceiling_sigma = _level(z[ceiling_rows]) if ceiling_rows.sum() > 50 else (float(np.percentile(z, 99)), 0.15)
     vertical = (np.abs(cloud.normals[:, 2]) < 0.3) & (z > floor_z + 0.3) & (z < ceiling_z - 0.08)
     points, normals = cloud.points[vertical, :2], cloud.normals[vertical, :2]
+    heights = z[vertical] - floor_z
     lo, hi = cameras_xy.min(axis=0), cameras_xy.max(axis=0)
     sides, unseen = {}, []
     everything = cloud.points[(z > floor_z + 0.1) & (z < ceiling_z - 0.05), :2]
     for axis in (0, 1):
         for sign, beyond in ((1, hi[axis]), (-1, lo[axis])):
-            found = _side(points, normals, axis, sign, beyond)
+            found = _side(points, normals, axis, sign, beyond, heights, ceiling_z - floor_z)
             if found is None:
                 # No wall seen on this side: take the extent of whatever was observed there,
                 # with a wide sigma, rather than lose the room.
