@@ -234,11 +234,31 @@ def _solve(n_nodes: int, edges: list[Edge]) -> list[Pose4]:
             nodes.append(Pose4(x[4 * k], x[4 * k + 1:4 * k + 4]))
         return nodes
 
+    # Every edge's residual at once (the same algebra as _edge_residual). A per-edge Python
+    # loop made a 7-minute recording with ~1100 loop closures take most of an hour: the
+    # finite-difference Jacobian calls this once per column group, every iteration.
+    first = np.array([e.i for e in edges])
+    second = np.array([e.j for e in edges])
+    measured_yaw = np.array([e.measurement.yaw for e in edges])
+    measured_t = np.array([e.measurement.t for e in edges])
+    sqrt_info = np.array([e.sqrt_information for e in edges])
+
+    def all_residuals(x: np.ndarray) -> np.ndarray:
+        yaw = np.concatenate([[0.0], x[0::4]])
+        t = np.vstack([np.zeros(3), x.reshape(-1, 4)[:, 1:]])
+        yi, yj = yaw[first], yaw[second]
+        c, s = np.cos(yi), np.sin(yi)
+        moved = np.stack([c * measured_t[:, 0] - s * measured_t[:, 1], s * measured_t[:, 0] + c * measured_t[:, 1],
+                          measured_t[:, 2]], axis=1) + t[first] - t[second]
+        c, s = np.cos(-yj), np.sin(-yj)
+        error_t = np.stack([c * moved[:, 0] - s * moved[:, 1], s * moved[:, 0] + c * moved[:, 1], moved[:, 2]], axis=1)
+        error_yaw = (yi + measured_yaw - yj + np.pi) % (2 * np.pi) - np.pi
+        return np.einsum("eab,eb->ea", sqrt_info, np.column_stack([error_yaw, error_t]))
+
     weights = np.ones(len(edges))
 
     def residuals(x: np.ndarray) -> np.ndarray:
-        nodes = unpack(x)
-        return np.concatenate([np.sqrt(w) * _edge_residual(nodes[e.i], nodes[e.j], e) for e, w in zip(edges, weights)])
+        return (np.sqrt(weights)[:, None] * all_residuals(x)).reshape(-1)
 
     from scipy.sparse import lil_matrix
 
@@ -259,8 +279,7 @@ def _solve(n_nodes: int, edges: list[Edge]) -> list[Pose4]:
     loop = np.array([e.loop for e in edges])
     for scale in GRADUATED_SCALES:
         for _ in range(3):
-            nodes = unpack(x)
-            norms = np.array([np.linalg.norm(_edge_residual(nodes[e.i], nodes[e.j], e)) for e in edges])
+            norms = np.linalg.norm(all_residuals(x), axis=1)
             weights[:] = np.where(loop, 1.0 / (1.0 + (norms / scale) ** 2), 1.0)
             x = least_squares(residuals, x, method="trf", x_scale="jac", jac_sparsity=sparsity, max_nfev=50).x
     return unpack(x)
