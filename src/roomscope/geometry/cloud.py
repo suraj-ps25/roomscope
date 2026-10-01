@@ -83,8 +83,8 @@ def frame_points(frame: Frame, pose: np.ndarray, min_confidence: int = 1, stride
 
 
 def fuse(frames: list[Frame], poses: dict[int, np.ndarray], voxel: float = 0.02,
-         min_confidence: int = 1, stride: int = 1) -> Cloud:
-    clouds = [frame_points(f, poses[f.index], min_confidence, stride) for f in frames]
+         min_confidence: int = 1, stride: int = 1, max_depth: float = MAX_DEPTH) -> Cloud:
+    clouds = [frame_points(f, poses[f.index], min_confidence, stride, max_depth) for f in frames]
     return voxelize(Cloud.concat(clouds), voxel)
 
 

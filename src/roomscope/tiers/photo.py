@@ -33,6 +33,9 @@ CONSISTENT_SHARE = 0.5
 INCONSISTENT_SCALE_SIGMA = 0.25
 SCALE_BIAS_BUDGET = 0.02
 PHOTO_VOXEL = 0.03
+# The LiDAR cut-off (4 m, the sensor's useful range) would drop exactly what a corner
+# photo is for: the far walls of a room 5-8 m long.
+IMAGE_MAX_DEPTH_M = 12.0
 GRAVITY_PRIOR_WEIGHT = 0.02
 # Benchmark ablation hook (roomscope run --oracle-depth): photo -> MetricDepth.
 depth_source = None
@@ -355,11 +358,12 @@ def _registered_room(room, photos, metric, intrinsics, first_index, timing) -> R
 
 
 def _finish_room(room, photos, frames, agreement, notes, timing) -> RoomReconstruction:
-    raw = fuse(frames, {f.index: f.pose for f in frames}, voxel=PHOTO_VOXEL, stride=1, min_confidence=1)
+    raw = fuse(frames, {f.index: f.pose for f in frames}, voxel=PHOTO_VOXEL, stride=1, min_confidence=1,
+               max_depth=IMAGE_MAX_DEPTH_M)
     gravity = np.eye(4)
     gravity[:3, :3] = gravity_rotation(raw.normals, [f.pose for f in frames])
     poses = {f.index: gravity @ f.pose for f in frames}
-    cloud = fuse(frames, poses, voxel=PHOTO_VOXEL, stride=1, min_confidence=1)
+    cloud = fuse(frames, poses, voxel=PHOTO_VOXEL, stride=1, min_confidence=1, max_depth=IMAGE_MAX_DEPTH_M)
     alignment = align(cloud)
     cloud = alignment.apply(cloud)
     poses = {k: alignment.pose(v) for k, v in poses.items()}
