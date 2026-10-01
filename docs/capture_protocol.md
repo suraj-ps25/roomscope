@@ -82,3 +82,4 @@ One command per capture. It writes `runs/<name>/plan.json` and `runs/<name>/plan
 | Shiny / wet-look floor | Reflections under the floor | Floor level is the dominant upward surface, so reflections below it are ignored |
 | Low light | Photos and video get noisy; LiDAR is unaffected | Turn the lights on. Photo/video intervals widen when matches are poor |
 | Closed door | Looks like wall | Open all doors (step "Before any capture") |
+| Ceiling never filmed (phone kept level) | No ceiling height; door headers unseen | Walls are found above furniture height and doorway gaps closed; the ceiling is reported as a prior (2.6 m, never below the walls seen) with a wide interval and a note. Tilt up once per room to measure it |
