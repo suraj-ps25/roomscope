@@ -41,6 +41,8 @@ class LidarOptions:
     measure_confidence: int = 2
     select_keyframes: bool = True
     damage: bool = True
+    # Depth scale for the capture device; None looks it up in calibration/lidar_depth.json.
+    depth_scale: float | None = None
 
 
 @dataclass
@@ -74,9 +76,33 @@ class _Clock:
         self._start = now
 
 
+def device_depth_scale(source_app: str | None) -> tuple[float, str | None]:
+    """A device's depth-scale correction, measured against laser scans
+    (benchmark/real/depth_scale.py). Devices never measured get none: an uncalibrated
+    phone is not corrected with another device's bias."""
+    import json
+    from ..build import CALIBRATION_DIR
+    path = CALIBRATION_DIR / "lidar_depth.json"
+    if not path.exists() or source_app is None:
+        return 1.0, None
+    table = json.loads(path.read_text())
+    entry = table.get("devices", {}).get(source_app)
+    return (float(entry["scale"]), table.get("id")) if entry else (1.0, None)
+
+
+def _scaled(load, scale: float):
+    return lambda: load() * np.float32(scale)
+
+
 def run_lidar(bundle: CaptureBundle, options: LidarOptions | None = None) -> LidarResult:
     options = options or LidarOptions()
     clock = _Clock()
+    scale, table = (options.depth_scale, None) if options.depth_scale is not None else device_depth_scale(bundle.source_app)
+    if scale != 1.0:
+        for frame in bundle.frames:
+            if frame.load_depth is not None:
+                frame.load_depth = _scaled(frame.load_depth, scale)
+        bundle.notes.append(f"depth scaled by {scale:.4f} for {bundle.source_app} ({table})")
     frames = select_keyframes(bundle.frames, options.keyframe_fps) if options.select_keyframes else list(bundle.frames)
     clock.lap("ingest")
     log("ingest", f"{len(frames)} frames")
@@ -102,7 +128,8 @@ def run_lidar(bundle: CaptureBundle, options: LidarOptions | None = None) -> Lid
             if round_index > 0:
                 # From the second round on, door and window jambs join the landmarks.
                 found = [o for r in regions if r.id in layouts
-                         for o in detect_openings(layouts[r.id], r, frames, poses, options.tol)[0] if o.kind != "mirror"]
+                         for o in detect_openings(layouts[r.id], r, frames, poses, options.tol, as_landmarks=True)[0]
+                         if o.kind != "mirror"]
             poses, notes = plane_adjust(frames, poses, list(layouts.values()),
                                         {region.id: region for region in regions}, found, options.planes)
             drift_notes += notes

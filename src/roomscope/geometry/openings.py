@@ -165,7 +165,8 @@ def _accumulate(frame: Frame, pose: np.ndarray, walls: list[_Wall], rng: np.rand
 
 def detect_openings(layout: RoomLayout, region: RoomRegion | None, frames: list[Frame],
                     poses: dict[int, np.ndarray], tol: Tolerances = LIDAR_TOL,
-                    doorways: list[tuple[int, float]] | None = None) -> tuple[list[Opening], list[str]]:
+                    doorways: list[tuple[int, float]] | None = None,
+                    as_landmarks: bool = False) -> tuple[list[Opening], list[str]]:
     """doorways: (wall index, position along it) of places known to be doorways (a photo
     taken standing on the threshold). An opening found there is a door; where none was
     found, a relaxed search runs around that spot."""
@@ -178,7 +179,7 @@ def detect_openings(layout: RoomLayout, region: RoomRegion | None, frames: list[
     room_tree = cKDTree(layout.points.points)
     openings, notes = [], []
     for wall in walls:
-        found, wall_notes = _extract(layout, wall, room_tree, tol)
+        found, wall_notes = _extract(layout, wall, room_tree, tol, as_landmarks)
         openings += found
         notes += wall_notes
     for wall_index, u in doorways or []:
@@ -225,7 +226,11 @@ def _doorway_at(layout: RoomLayout, wall: _Wall, u: float, tol: Tolerances) -> O
 
 
 def _extract(layout: RoomLayout, wall: _Wall, room_tree: cKDTree,
-             tol: Tolerances = LIDAR_TOL) -> tuple[list[Opening], list[str]]:
+             tol: Tolerances = LIDAR_TOL, as_landmarks: bool = False) -> tuple[list[Opening], list[str]]:
+    """as_landmarks: openings wanted for their jambs and head as adjustment landmarks, not
+    for the plan. Each detected run's own edges are what the adjustment needs; merging
+    sashes or turning a floor-level window into a door would trade a measured sill for an
+    assumed floor, and on a real recording that moved the poses enough to lose the door."""
     ev = wall.evidence
     total = ev.face + ev.recess + ev.through + ev.noreturn
     score = np.divide(ev.through + ev.noreturn + 0.5 * ev.recess, total, out=np.zeros(total.shape), where=total > 0)
@@ -269,13 +274,15 @@ def _extract(layout: RoomLayout, wall: _Wall, room_tree: cKDTree,
                 v0 = wall.floor_z
         kind = "opening" if touches_floor and v1 > wall.ceiling_z - 0.05 else ("door" if touches_floor else "window")
         opening = _refine(layout, wall, kind, u0, u1, v0, v1, tol)
-        if opening.kind == "window" and opening.v0 - wall.floor_z < DOOR_SILL_MAX_M:
+        if not as_landmarks and opening.kind == "window" and opening.v0 - wall.floor_z < DOOR_SILL_MAX_M:
             # The class was decided on the vote region; a sill the reveal puts at floor
             # level is a door whose bottom was seen only at its edge.
             opening.kind, opening.v0, opening.sigma_v0 = "door", wall.floor_z, 0.003
         observed = float((total[iu0:iu1, iv0:iv1] >= tol.min_votes).mean())
         opening.confidence = float(np.clip(observed * min(1.0, fill / 0.8), 0, 1))
         found.append(opening)
+    if as_landmarks:
+        return found, notes
     merged, merge_notes = _merge_sashes([o for o in found if o.kind != "mirror"], wall)
     return [o for o in found if o.kind == "mirror"] + merged, notes + merge_notes
 
