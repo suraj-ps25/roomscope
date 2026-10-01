@@ -73,6 +73,13 @@ def _run(args: argparse.Namespace) -> int:
     print(f"  {len(document['rooms'])} rooms, {len(document['adjacency'])} connections, "
           f"footprint {document['property']['footprint_area']['value']:.2f} m2 "
           f"in {plan.timing_s['total']:.0f} s")
+    if not document["rooms"]:
+        print("  no room was measured: no region the camera stood in was enclosed by walls. "
+              "Capture notes:", file=sys.stderr)
+        for note in document["capture"]["notes"]:
+            print(f"    - {note}", file=sys.stderr)
+        print("  The protocol asks for a full turn in each room so every wall is seen "
+              "(docs/capture_protocol.md).", file=sys.stderr)
     print(f"  wrote {out / 'plan.json'} and {out / 'plan.png'}")
     return 0
 
