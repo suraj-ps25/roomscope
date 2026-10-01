@@ -75,7 +75,9 @@ def main() -> int:
                     continue
             plan = json.loads((run / "plan.json").read_text())
             row = {"visit": visit, "recording": video, "tier": tier, "rooms": len(plan["rooms"])}
-            if plan["rooms"]:
+            if plan["rooms"] and not truth["rooms"]:
+                row["notes"] = ["no laser truth for this visit: not scored"]
+            elif plan["rooms"]:
                 metrics = evaluate(plan, truth)
                 _measured_walls_only(metrics, truth)
                 (run / "metrics.json").write_text(json.dumps(metrics, indent=2))
