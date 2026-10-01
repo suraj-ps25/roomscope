@@ -45,6 +45,7 @@ SPECK_WINDOW_M = 0.03
 SPECK_DENSITY = 0.12
 OBJECT_COLOUR_SPREAD = 9.0
 MIN_SPECKS = 15
+SPECK_MAX_M2 = 0.002
 
 
 @dataclass
@@ -112,6 +113,14 @@ def _objects(lab: np.ndarray, delta: np.ndarray, valid: np.ndarray, texel: float
         spread = float(np.std(lab[coords][:, 1]) + np.std(lab[coords][:, 2]))
         fill = region.area / max(region.area_bbox, 1)
         if spread > OBJECT_COLOUR_SPREAD or (fill > 0.9 and np.std(lab[coords][:, 0]) > 12):
+            # Mould is many separate small dark specks on a light ground; print is continuous.
+            # A patch that is mostly specks is left for the mould detector.
+            piece = np.zeros_like(valid)
+            piece[coords] = True
+            specks = regionprops(label((delta[..., 0] < -SPECK_DARK_L) & piece, connectivity=2))
+            small = [r for r in specks if r.area * texel ** 2 < SPECK_MAX_M2]
+            if len(small) >= MIN_SPECKS and len(small) >= 0.7 * len(specks):
+                continue
             mask[coords] = True
     return ndimage.binary_dilation(mask, iterations=max(1, int(0.02 / texel)))
 

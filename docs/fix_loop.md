@@ -79,6 +79,30 @@ evaluator, so before and after are measured with the same ruler. Output goes to
 | openings within 2 cm | 7/9 | 9/9 |
 | footprint error | −0.2% | −0.04% |
 
+### lidar-loop-tear: wrong loop closures tore the pose graph (`d53e04a` → `7633a27`)
+
+- **Symptom:** LiDAR, flat_a seed 1 (seed 0 passed): openings 5/10, adjacency wrong,
+  walls up to 2.6 cm, a phantom strip of hallway outside the flat.
+- **Isolation:** trajectory error against the simulator's true poses was fine up to the
+  last 4 s, then grew linearly to 55 cm. Each fragment's solved correction against its
+  ideal one (from truth) showed the break at fragments 73 → 74; the loop closures from 74
+  and 75 back to the start all said "no drift" while the ideal said 0.6 m.
+- **Cause:** those ICP closures had slid along the hallway. The Cauchy loss was applied to
+  every edge, so the solver switched off the one odometry edge that disagreed with them.
+- **Fix:** IRLS with Cauchy weights on loop closures only; odometry is never robustified.
+  Trajectory error median 5.1 → 1.1 cm (seed 1), 4.5 → 0.7 cm (seed 0).
+
+### photo-depth-cap: far walls vanished from photo reconstructions (`bdb7174` → `a1a7bf5`)
+
+- **Symptom:** photo tier with true depth on a scanned room (Replica room0): 3.27 × 3.90 m
+  for a 4.58 × 7.71 m room, "no wall seen" on two sides.
+- **Isolation:** a top-down plot of the fused cloud showed furniture but no walls.
+- **Cause:** every depth map was cut at 4 m, the LiDAR's useful range, for every tier; a
+  corner photo of a long room is mostly far wall. The same cap, in the opening detector,
+  hid the living-room door. An earlier note blaming "corridor photos that don't overlap"
+  for a short synthetic hallway was wrong: it was this cap.
+- **Fix:** depth limits per tier (12 m for image depth), for fusion and for opening rays.
+
 ### Earlier fixes (in the history, found the same way)
 
 These predate the regeneration script, so their before/after is recorded in the commit
@@ -93,3 +117,7 @@ messages rather than regenerated.
 | `74a9670` | video turn views 15% consistent | MoGe-2 per-view scale 0.46–1.55 on synthetic frames | per-view scale solved from overlaps (Cauchy IRLS), distorted views dropped |
 | `b70069d` | video walls 4–7 cm in two rooms | the first frame of a turn is mid-step, off the turning axis | trim turn ends; rotation averaging with SIFT loop closure |
 | `012db77` | bathroom turn missed | homography yaw 1–2°/step on white walls during an 8°/step turn | rotation-only yaw, forward-backward track check |
+| `2d74357` | LiDAR seeds 0/1: hallway merged with bedroom or bathroom | wall directions were 2° bin centres (a degree off moves a 5 m trace 9 cm, so it stopped short); walls never seen under the ceiling had no barrier | refined directions; traces extended along their own wall at any height; roof mask with hole filling |
+| `dd89e05`, `b31c18c` | photo stitch 1 of 3 links, openings 4/10 (true depth) | doorway shots didn't register; side doors seen too obliquely | threshold photo pairs join rooms through a shared standpoint; doors carried through the wall: 3/3 links, 9/9 openings |
+| `1e1b338` | scanned room0 one side 15.6 cm short (true depth) | nearest plane was a full-length sill bench | a wall must reach the ceiling: 0.47 cm |
+| (this commit) | undamaged scanned rooms: 10–19 false damage regions per video room | short ridges, structure lines, floor shading; video too coarse for cracks | report confidence ≥ 0.6, cracks ≤ 2.5 m, no floor analysis, no cracks from video |

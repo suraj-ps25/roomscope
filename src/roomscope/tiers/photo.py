@@ -599,8 +599,9 @@ def plan_from_photo_sets(folders: dict, capture_id: str, profile, source_app: st
                 neighbours.setdefault(o.wall, []).append(other[0])
             converted.append(OpeningGeometry(o.wall, o.kind, o.u0, o.u1, o.v0, o.v1, o.sigma_u0, o.sigma_u1,
                                              o.sigma_v0, o.sigma_v1, o.confidence, other[0] if other else None, other))
+        from ..damage.stage import ALL_CLASSES, VIDEO_CLASSES
         damage = analyse_room(layout, [o for o in rec.openings if o.kind != "mirror"], mirrors, rec.frames, rec.poses,
-                              name, neighbours)
+                              name, neighbours, classes=VIDEO_CLASSES if profile.tier == "video" else ALL_CLASSES)
         for key in ("floor", "ceiling"):
             for det in damage.detections.get(key, []):
                 det.polygon_uv = transform.apply(det.polygon_uv)

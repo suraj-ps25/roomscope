@@ -176,6 +176,43 @@ def _overlap_area(polygons: list[np.ndarray]) -> float:
     return float(np.sum(count > 1) * 1e-4)
 
 
+def _score_damage(pairs: list[tuple[dict, dict]], plan: dict) -> dict:
+    """Staged damage vs reported regions: matched by room, class and surface kind (wall or
+    ceiling; walls by kind only, since rectangle layouts can't name the wall index the
+    truth uses). A truth region is found if a reported region of its class is on that
+    kind of surface; every reported region left over is a false positive."""
+    found, missed, false_positive = [], [], []
+    matched_rooms = set()
+    for pred, truth in pairs:
+        matched_rooms.add(pred["id"])
+        reported = [(s["kind"], d) for s in pred["surfaces"] for d in s.get("damage_regions", [])]
+        used = set()
+        for staged in truth.get("damage", []):
+            kind = "ceiling" if staged["surface"] == "ceiling" else ("floor" if staged["surface"] == "floor" else "wall")
+            options = [(k, d) for k, (surface_kind, d) in enumerate(reported)
+                       if k not in used and surface_kind == kind and d["class"] == staged["class"]]
+            if not options:
+                missed.append({"room": truth["id"], "class": staged["class"], "surface": staged["surface"]})
+                continue
+            size = "length" if staged["class"] == "crack" else "area"
+            k, best = min(options, key=lambda item: abs((item[1].get(size) or {}).get("value", 0) - staged.get(size, 0)))
+            used.add(k)
+            measured = (best.get(size) or {}).get("value")
+            found.append({"room": truth["id"], "class": staged["class"], "quantity": size, "truth": staged.get(size),
+                          "measured": measured, "relative_error": (measured / staged[size] - 1) if measured and staged.get(size) else None})
+        false_positive += [{"room": truth["id"], "class": d["class"], "surface": surface_kind}
+                           for k, (surface_kind, d) in enumerate(reported) if k not in used]
+    for room in plan["rooms"]:
+        if room["id"] not in matched_rooms:
+            false_positive += [{"room": room["id"], "class": d["class"], "surface": s["kind"]}
+                               for s in room["surfaces"] for d in s.get("damage_regions", [])]
+    staged = len(found) + len(missed)
+    reported = len(found) + len(false_positive)
+    return {"staged": staged, "found": len(found), "false_positives": len(false_positive),
+            "recall": len(found) / staged if staged else None, "precision": len(found) / reported if reported else None,
+            "detail": found, "missed": missed, "false_positive_detail": false_positive}
+
+
 def evaluate(plan: dict, gt: dict) -> dict:
     pairs = match_rooms(plan, gt)
     rooms = [_score_room(p, t) for p, t in pairs]
@@ -237,6 +274,7 @@ def evaluate(plan: dict, gt: dict) -> dict:
         },
         "calibration": {"ci_level": ci_level, "coverage": float(np.mean(covered)) if covered else None,
                         "measurements": len(covered)},
+        "damage": _score_damage(pairs, plan),
         "per_room": [{"predicted": r.predicted, "truth": r.truth,
                       "wall_errors_m": [round(e, 4) for e in r.wall_errors],
                       "ceiling_error_m": round(r.ceiling_error, 4), "area_error_m2": round(r.area_error, 3)} for r in rooms],

@@ -14,6 +14,11 @@ from .rules import Flag, OpeningExtent, SurfaceDamage, evaluate_rules
 
 VIEWS_PER_SURFACE = 40
 ORTHO_STEP = 1
+# Reporting thresholds, set from undamaged scanned rooms (every detection there is false)
+# and the staged synthetic damage (true detections score 0.74-1.0):
+REPORT_MIN_CONFIDENCE = 0.6     # crack confidence is length / 0.3 m: nothing under 18 cm
+CRACK_MAX_M = 2.5               # longer "cracks" are structure: blind slats, frames, skirting
+CRACK_MIN_M = 0.25              # shorter ones are too easily the edge of something in front
 
 
 @dataclass
@@ -37,15 +42,23 @@ def _best_views(frames: list[Frame], poses: dict[int, np.ndarray], centre: np.nd
     return [frame for _, frame in scored[:VIEWS_PER_SURFACE]]
 
 
+ALL_CLASSES = ("water_stain", "mold", "crack")
+# Video frames (720 px across, compressed) can't tell a 1-3 mm crack from a frame or cabinet
+# edge: on undamaged scanned rooms they did, by the dozen. Stains and mould are larger.
+VIDEO_CLASSES = ("water_stain", "mold")
+
+
 def analyse_room(layout: RoomLayout, openings: list, mirrors: list, frames: list[Frame], poses: dict[int, np.ndarray],
-                 label: str, neighbours_on_wall: dict[int, list[str]], warm_rgb=None) -> RoomDamage:
+                 label: str, neighbours_on_wall: dict[int, list[str]], warm_rgb=None,
+                 classes: tuple[str, ...] = ALL_CLASSES) -> RoomDamage:
     polygon = layout.polygon
     n = len(polygon)
     grids = []
     for k, line in enumerate(layout.lines):
         grids.append((f"w{k}", k, wall_grid(f"w{k}", polygon[k], polygon[(k + 1) % n], line.normal,
                                            layout.floor_z, layout.ceiling_z)))
-    grids.append(("floor", None, level_grid("floor", "floor", polygon, layout.floor_z + 0.002)))
+    # Floors are not analysed: rugs, wood grain, furniture shadows and grazing views make
+    # every detector there unreliable (on the synthetic flat it reported 0.9 m2 "stains").
     grids.append(("ceiling", None, level_grid("ceiling", "ceiling", polygon, layout.ceiling_z - 0.002)))
 
     extents = [OpeningExtent(f"o{i}", o.kind, o.wall, o.u0, o.u1, o.v0 - layout.floor_z, o.v1 - layout.floor_z)
@@ -74,6 +87,8 @@ def analyse_room(layout: RoomLayout, openings: list, mirrors: list, frames: list
                 d.polygon_uv = d.polygon_uv + grid.origin[:2]
                 u0, u1, v0, v1 = d.bbox_uv
                 d.bbox_uv = (u0 + grid.origin[0], u1 + grid.origin[0], v0 + grid.origin[1], v1 + grid.origin[1])
+        found = [d for d in found if d.cls in classes and d.confidence >= REPORT_MIN_CONFIDENCE
+                 and not (d.cls == "crack" and not CRACK_MIN_M <= (d.length_m or 0) <= CRACK_MAX_M)]
         ids = [f"{key}/d{i}" for i in range(len(found))]
         result.detections[key] = found
         result.ids[key] = ids

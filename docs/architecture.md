@@ -160,8 +160,14 @@ loop closure.
   (hysteresis over a 1.2 m background).
 - Seven explicit concealed-damage rules cite their evidence.
 - Scope lines are keyed to surfaces.
-- Peeling paint is deliberately not reported (it's indistinguishable from lighting
-  gradients).
+- Reporting thresholds were set against undamaged real scanned rooms (every detection
+  there is false) and the staged synthetic damage: confidence ≥ 0.6, cracks between 0.25 and
+  2.5 m (shorter ones are too easily an object's edge, longer ones are blind slats or frames), and a patch that
+  is mostly small separate dark specks is left to the mould detector rather than masked
+  as printed decor.
+- Not reported, deliberately: peeling paint (indistinguishable from lighting gradients);
+  anything on floors (rugs, wood grain, furniture shadows, grazing views); cracks from
+  video (720 px, compressed: a 1–3 mm crack can't be told from a frame edge).
 
 ## Intervals
 
