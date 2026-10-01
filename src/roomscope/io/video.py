@@ -256,22 +256,22 @@ def _rotation_error(homographies: list[np.ndarray], fx: float, aspect: float, cx
     return float(np.median(errors))
 
 
-def focal_from_rotation(homographies: list[np.ndarray], K: np.ndarray) -> float | None:
+def focal_from_rotation(homographies: list[np.ndarray], K: np.ndarray, aspect: float = 1.0) -> float | None:
     """Focal length from a turning camera (Hartley 1997): for pure rotation H = K R K^-1, so
-    only the true K makes every K^-1 H K orthonormal. Square pixels and the principal point
-    at the centre are assumed; the focal is a 1-D search over [0.4, 2.5] x the image width.
+    only the true K makes every K^-1 H K orthonormal. fy = aspect x fx (the decode's resize
+    is not exactly uniform) and the principal point at the centre are assumed; the focal is a 1-D search over [0.4, 2.5] x the image width.
     Needs a turn with real rotation: small steps hardly constrain the focal."""
     usable = [H for H in homographies if np.isfinite(H).all()]
     if len(usable) < 8:
         return None
     width = 2 * (K[0, 2] + 0.5)
     candidates = np.geomspace(0.4 * width, 2.5 * width, 160)
-    errors = [_rotation_error(usable, f, 1.0, K[0, 2], K[1, 2]) for f in candidates]
+    errors = [_rotation_error(usable, f, aspect, K[0, 2], K[1, 2]) for f in candidates]
     best = int(np.argmin(errors))
     if best in (0, len(candidates) - 1):
         return None
     fine = np.geomspace(candidates[best - 1], candidates[best + 1], 60)
-    return float(fine[np.argmin([_rotation_error(usable, f, 1.0, K[0, 2], K[1, 2]) for f in fine])])
+    return float(fine[np.argmin([_rotation_error(usable, f, aspect, K[0, 2], K[1, 2]) for f in fine])])
 
 
 def _orthonormal(R: np.ndarray) -> np.ndarray:
@@ -602,3 +602,4 @@ def turn_views(rotations: dict[int, np.ndarray], per_revolution: int = 14) -> li
     views = max(4, int(round(per_revolution * total / 360.0)))
     targets = np.radians(np.linspace(0, total, views, endpoint=total not in (360.0, 720.0)))
     return sorted({frames[int(np.argmin(np.abs(heading - t)))] for t in targets})
+

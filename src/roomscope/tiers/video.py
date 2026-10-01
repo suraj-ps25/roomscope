@@ -80,6 +80,8 @@ def run_video(path) -> PhotoResult:
     height, width = video.images[0].shape[:2]
     log("ingest", f"decoded {len(video.images)} frames at {width}x{height}")
     K, fov = _intrinsics(video, (width, height))
+    # Decoding resizes to patch-multiple sizes, so pixels are not exactly square any more.
+    aspect = (height / video.source_size[1]) / (width / video.source_size[0])
     homographies = {}
     steps, residuals = yaw_steps(video.images, K, homographies)
     turns = find_spins(steps, video.timestamps, residuals)
@@ -90,13 +92,14 @@ def run_video(path) -> PhotoResult:
         # Without a lens tag, the turns themselves calibrate the focal; metric depth scales
         # with it, so a monocular estimate's few-percent focal error would land on every wall.
         focals = [focal_from_rotation([homographies[k] for k in range(a + 1, b + 1)
-                                       if k in homographies and residuals[k] <= STANDING_STILL_PX], K) for a, b in turns]
+                                       if k in homographies and residuals[k] <= STANDING_STILL_PX], K, aspect)
+                  for a, b in turns]
         focals = [f for f in focals if f]
         if focals:
             fx = float(np.median(focals))
             log("rooms", f"focal from the turns: {fx:.1f} px (monocular estimate {K[0, 0]:.1f} px)")
             notes.append(f"focal self-calibrated from {len(focals)} turns: {fx:.1f} px at {width} px width")
-            K = np.array([[fx, 0, K[0, 2]], [0, fx, K[1, 2]], [0, 0, 1.0]])
+            K = np.array([[fx, 0, K[0, 2]], [0, fx * aspect, K[1, 2]], [0, 0, 1.0]])
             fov = float(np.degrees(2 * np.arctan(width / (2 * fx))))
     if not turns:
         notes.append("no on-the-spot turns found (capture protocol not followed): the clip is treated as one room")
