@@ -145,6 +145,10 @@ def reconstruct_room(room: str, photos: list[Photo], first_index: int = 0) -> Ro
     if all(p.rotation is not None for p in photos):
         return _panorama_room(room, photos, metric, intrinsics, first_index, timing)
     start = time.perf_counter()
+    registered = _registered_room(room, photos, metric, intrinsics, first_index, timing)
+    if registered is not None:
+        return registered
+    start = time.perf_counter()
     views = reconstruct([p.image for p in photos], intrinsics, [m.depth for m in metric])
     timing["multiview"] = round(time.perf_counter() - start, 2)
 
@@ -311,6 +315,43 @@ def _panorama_room(room, photos, metric, intrinsics, first_index, timing) -> Roo
     if bad:
         notes.append(f"{len(bad)} view(s) dropped: depth inconsistent with the overlapping views")
     return _finish_room(room, photos, frames, agreement, notes, timing)
+
+
+MIN_REGISTERED_SHARE = 0.5
+
+
+def _registered_room(room, photos, metric, intrinsics, first_index, timing) -> RoomReconstruction | None:
+    """Poses and per-view depth scale from feature matches lifted with each photo's metric
+    depth (geometry/registration.py). None when the matches don't tie enough of the
+    photos together; the learned multi-view model is the fallback then."""
+    from ..geometry.registration import register
+
+    start = time.perf_counter()
+    result = register([p.image for p in photos], [m.depth for m in metric], [m.mask for m in metric], intrinsics)
+    timing["registration"] = round(time.perf_counter() - start, 2)
+    if result is None or len(result.registered) < max(3, MIN_REGISTERED_SHARE * len(photos)):
+        return None
+    frames = []
+    for k in result.registered:
+        photo, m, K = photos[k], metric[k], intrinsics[k]
+        depth = np.where(m.mask, m.depth * result.scales[k], 0.0).astype(np.float32)
+        height, width = depth.shape
+        full_h, full_w = photo.original.shape[:2]
+        full_K = K.copy()
+        full_K[0] *= full_w / width
+        full_K[1] *= full_h / height
+        levels = _edge_free(depth, m.mask)
+        frames.append(Frame(first_index + k, float(k), full_K, (full_w, full_h), result.poses[k], room,
+                            load_rgb=(lambda im=photo.original: im), load_depth=(lambda d=depth: d),
+                            load_confidence=(lambda c=levels: c), depth_K=K, depth_size=(width, height)))
+    agreement = view_agreement(frames)
+    spread = np.std(np.log(result.scales[result.registered]))
+    notes = [f"{len(frames)} of {len(photos)} photos registered by matched 3D points (median gap "
+             f"{100 * result.rms_m:.1f} cm), per-view scale spread {spread:.1%}, multi-view agreement {agreement:.0%}"]
+    dropped = [k for k in range(len(photos)) if k not in result.registered]
+    if dropped:
+        notes.append(f"{len(dropped)} photo(s) share no reliable matches with the rest and were left out")
+    return _finish_room(room, [photos[k] for k in result.registered], frames, agreement, notes, timing)
 
 
 def _finish_room(room, photos, frames, agreement, notes, timing) -> RoomReconstruction:

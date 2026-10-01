@@ -50,8 +50,9 @@ the camera.
 1. Camera app → **Photo**, lens at **1×**, **landscape**, no Portrait mode, no zoom.
 2. In **each room** take **5–8 photos**:
    - **Photos 1–4:** stand in each corner of the room and point the phone toward the
-     **opposite corner**, at chest height, tilted slightly down so **both the floor and
-     the ceiling edge** are in the picture.
+     **opposite corner**, at chest height, held **nearly level** (a touch down) so **both
+     the floor and the ceiling edge** are in the picture. Check the ceiling edge is
+     really in frame, especially in a small room; if not, step back into the corner.
    - **Then one photo per doorway:** stand about **1 m inside the room facing the
      doorway**, so the whole door frame and a glimpse of the next room are in view.
 3. Hand-off: make **one folder per room** on the Mac, named after the room

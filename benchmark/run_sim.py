@@ -35,6 +35,8 @@ def main() -> int:
     parser.add_argument("--rgb-width", type=int, default=480)
     parser.add_argument("--out", default=str(ROOT / "runs" / "simbench"))
     parser.add_argument("--ablation", action="store_true", help="also run with drift correction off")
+    parser.add_argument("--depth", choices=["model", "oracle", "both"], default="model",
+                        help="photo/video: MoGe-2 depth, rendered true depth (ablation), or both")
     args = parser.parse_args()
 
     roomscope = str(Path(sys.executable).parent / "roomscope")
@@ -46,17 +48,22 @@ def main() -> int:
             name = f"{Path(args.scene).stem}_{args.tier}_d{drift:g}_s{seed}"
             capture = ROOT / "data" / "captures" / "simbench" / name
             if not capture.exists():
-                _run([roomscope, "sim", args.scene, "--tier", args.tier, "--out", str(capture), "--seed", str(seed),
-                      "--drift", str(drift), "--rgb-width", str(args.rgb_width)])
-            variants = [("corrected", [])] + ([("as-is", ["--no-drift-correction"])] if args.ablation else [])
+                sim = [roomscope, "sim", args.scene, "--tier", args.tier, "--out", str(capture), "--seed", str(seed)]
+                if args.tier == "lidar":
+                    sim += ["--drift", str(drift), "--rgb-width", str(args.rgb_width)]
+                _run(sim)
+            if args.tier == "lidar":
+                variants = [("corrected", [])] + ([("as-is", ["--no-drift-correction"])] if args.ablation else [])
+            else:
+                variants = {"model": [("model", [])], "oracle": [("oracle", ["--oracle-depth"])],
+                            "both": [("model", []), ("oracle", ["--oracle-depth"])]}[args.depth]
             for label, flags in variants:
                 run_dir = out / f"{name}_{label}"
                 _run([roomscope, "run", str(capture), "--out", str(run_dir), *flags])
                 plan = json.loads((run_dir / "plan.json").read_text())
                 result = evaluate(plan, load_ground_truth(capture / "ground_truth.json"))
                 (run_dir / "metrics.json").write_text(json.dumps(result, indent=2, default=float))
-                if label == "corrected":
-                    plans[seed] = plan
+                plans.setdefault(label, {})[seed] = plan
                 rows.append({"drift": drift, "seed": seed, "variant": label,
                              "wall_max_cm": round(result["walls"]["max_abs_m"] * 100, 2),
                              "walls_1cm": result["walls"]["within_1cm"],
@@ -67,13 +74,14 @@ def main() -> int:
                              "coverage": result["calibration"]["coverage"],
                              "seconds": plan.get("timing_s", {}).get("total")})
                 print(json.dumps(rows[-1]), flush=True)
-        for a, b in combinations(sorted(plans), 2):
-            rep = repeatability(plans[a], plans[b])
-            passing = sum(r.get("pass", False) for r in rep)
-            worst = max((abs(r["difference"]) for r in rep if "difference" in r), default=float("nan"))
-            rows.append({"drift": drift, "repeatability": f"s{a} vs s{b}", "walls_passing": f"{passing}/{len(rep)}",
-                         "worst_cm": round(worst * 100, 2)})
-            print(json.dumps(rows[-1]), flush=True)
+        for label, by_seed in plans.items():
+            for a, b in combinations(sorted(by_seed), 2):
+                rep = repeatability(by_seed[a], by_seed[b])
+                passing = sum(r.get("pass", False) for r in rep)
+                worst = max((abs(r["difference"]) for r in rep if "difference" in r), default=float("nan"))
+                rows.append({"drift": drift, "variant": label, "repeatability": f"s{a} vs s{b}",
+                             "walls_passing": f"{passing}/{len(rep)}", "worst_cm": round(worst * 100, 2)})
+                print(json.dumps(rows[-1]), flush=True)
     out.mkdir(parents=True, exist_ok=True)
     (out / f"summary_{args.tier}.json").write_text(json.dumps(rows, indent=2))
     return 0

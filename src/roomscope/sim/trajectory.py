@@ -294,7 +294,9 @@ def photo_views(scene: SceneSpec, room_id: str, eye_height: float = 1.5) -> list
     for i, corner in enumerate(corners):
         eye = standable(scene, room, corner)
         target = centroid + (centroid - eye) * 0.6
-        views.append((f"corner{i + 1}", look_at([*eye, eye_height], [*target, eye_height - 0.35])))
+        # Close to level (about 5 degrees down), so floor and ceiling edges both show.
+        drop = np.tan(np.radians(5)) * float(np.linalg.norm(target - eye))
+        views.append((f"corner{i + 1}", look_at([*eye, eye_height], [*target, eye_height - drop])))
     doors = [o for o in scene.openings if o.room == room_id and o.type == "door"]
     for door in doors:
         start, direction, _, inward = room.wall_frame(door.wall)

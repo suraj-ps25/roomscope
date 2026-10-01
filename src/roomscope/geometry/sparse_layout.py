@@ -30,6 +30,7 @@ MIN_SIGMA_M = 0.02
 EFFECTIVE_POINTS = 50
 UNSEEN_SIGMA_M = 0.15
 FOOTPRINT_MARGIN_M = 0.05
+TYPICAL_CEILING_M = 2.5
 
 
 def _side(points: np.ndarray, normals: np.ndarray, axis: int, sign: int, beyond: float) -> tuple[float, float, int] | None:
@@ -112,5 +113,11 @@ def rectangle_layout(room: str, cloud: Cloud, cameras_xy: np.ndarray) -> RoomLay
     if unseen:
         notes.append(f"no wall seen on the {', '.join(unseen)} side; taken from the observed extent (15 cm sigma)")
     if not (ceiling_rows & inside).sum() > 50:
-        notes.append("ceiling barely seen; height from the highest points (wide interval)")
+        # Not in view: the ceiling is at least as high as anything seen, and residential
+        # ceilings are rarely outside 2.3-3.0 m. Report that range, not the highest point.
+        top = float(np.percentile(z[inside], 99.5)) if inside.any() else ceiling_z
+        ceiling_z = max(top, floor_z + TYPICAL_CEILING_M)
+        ceiling_sigma = max(UNSEEN_SIGMA_M, (ceiling_z - top) / 1.645, (floor_z + 3.0 - ceiling_z) / 1.645)
+        notes.append(f"ceiling not in view: at least {top - floor_z:.2f} m (highest point seen); "
+                     f"height is a residential prior with a wide interval")
     return RoomLayout(room, polygon, lines, floor_z, ceiling_z, floor_sigma, ceiling_sigma, cloud, notes)
