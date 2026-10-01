@@ -29,6 +29,7 @@ from ..io.video import (STANDING_STILL_PX, find_spins, focal_from_rotation, intr
 from ..log import log
 from .photo import PhotoResult, plan_from_photo_sets
 
+VIEWS_PER_REVOLUTION = 14
 VIEWS_PER_TURN = 10
 VIDEO_PROFILE = TierProfile("video", 0.02, "video: rooms from on-the-spot turns, MoGe-2 + MapAnything")
 
@@ -106,7 +107,7 @@ def run_video(path) -> PhotoResult:
     for turn in turns:
         turn_chain = turn_rotations(video.images, turn, K)
         rotations.update(turn_chain)
-        chosen.append(turn_views(turn_chain, VIEWS_PER_TURN))
+        chosen.append(turn_views(turn_chain, VIEWS_PER_REVOLUTION))
 
     times = sorted({float(video.timestamps[k]) for picks in chosen for k in picks})
     full = _full_resolution(clip, times)

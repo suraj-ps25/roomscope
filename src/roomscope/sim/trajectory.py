@@ -122,16 +122,19 @@ class Trajectory:
 SPIN_SECONDS = 9.0
 MAX_YAW_RATE_DEG_S = 90.0
 SPIN_PITCH_RAD = 0.75
+DOUBLE_SPIN_PITCH_RAD = np.radians(25)
 
 
 def walkthrough(scene: SceneSpec, route: list[str], fps: float = 6.0, speed: float = 0.35,
-                eye_height: float = 1.45, seed: int = 0, perimeter: bool = True) -> Trajectory:
+                eye_height: float = 1.45, seed: int = 0, perimeter: bool = True,
+                spin_style: str = "nod") -> Trajectory:
     """route: rooms in visiting order, e.g. [hallway, living, hallway, bedroom, hallway].
     Follows the capture protocol: on entering a room, walk to its middle and turn slowly
     through a full circle (sees opposite walls seconds apart, so room dimensions do not
     rest on long-term odometry), then walk the perimeter facing the walls. Transitions go
     through the connecting door. perimeter=False is the video protocol: the turn only, then
-    walk on to the next room."""
+    walk on to the next room. spin_style "nod" is one turn tilting up and down twice (LiDAR);
+    "double" is two turns, the first tilted down and the second tilted up (video)."""
     rng = np.random.default_rng(seed)
     waypoints: list[tuple[np.ndarray, str, str]] = []  # (xy, room, mode)
 
@@ -170,13 +173,14 @@ def walkthrough(scene: SceneSpec, route: list[str], fps: float = 6.0, speed: flo
         length = float(np.linalg.norm(b - a))
         tangent = (b - a) / max(length, 1e-9)
         if mode_a == "spin":
-            turns = int(SPIN_SECONDS * fps)
+            revolutions = 2 if spin_style == "double" else 1
+            turns = int(SPIN_SECONDS * revolutions * fps)
             for k in range(turns):
                 positions.append(a.copy())
                 rooms.append(room_a)
                 modes.append("spin")
                 headings.append(tangent)
-                spins.append(2 * np.pi * k / turns)
+                spins.append(2 * np.pi * revolutions * k / turns)
             mode_a = "walk"
         count = max(1, int(np.ceil(length / step)))
         for k in range(count):
@@ -198,7 +202,11 @@ def walkthrough(scene: SceneSpec, route: list[str], fps: float = 6.0, speed: flo
             # Slow full turn on the spot, tilting up to the ceiling and down to the floor
             # twice on the way round (protocol step).
             yaw = base_yaw + spin
-            pitch = SPIN_PITCH_RAD * np.sin(2 * spin)
+            if spin_style == "double":
+                # Down for the first revolution, up for the second, tipping over smoothly.
+                pitch = DOUBLE_SPIN_PITCH_RAD * np.tanh((spin - 2 * np.pi) / 1.0)
+            else:
+                pitch = SPIN_PITCH_RAD * np.sin(2 * spin)
         elif mode == "scan":
             # Face the walls (right of travel on a CCW loop) and sweep up/down and sideways.
             yaw = base_yaw - np.pi / 2 + 0.45 * np.sin(travelled * 2 * np.pi / 1.6)

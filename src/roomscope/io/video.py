@@ -123,12 +123,13 @@ def intrinsics_from_focal(focal_35mm: float, source_size: tuple[int, int], size:
 
 
 SPIN_MIN_DEG = 280.0
-SPIN_FULL_DEG = 390.0
+# Up to two revolutions (the video protocol's down-then-up double turn) plus overlap.
+SPIN_FULL_DEG = 760.0
 SPIN_MIN_SECONDS = 5.5
 STANDING_STILL_PX = 1.0
-SPIN_MAX_SECONDS = 25.0
+SPIN_MAX_SECONDS = 40.0
 SPIN_STEP_DEG = 2.5
-SPIN_MAX_DROPOUTS = 4
+SPIN_MAX_DROPOUTS = 6
 ROTATION_ONLY_PX = 3.0
 
 
@@ -177,6 +178,12 @@ def find_spins(steps_deg: np.ndarray, timestamps: np.ndarray, residuals: np.ndar
     if valid.sum() >= 2:
         index = np.arange(len(steps_deg))
         filled[~valid] = np.interp(index[~valid], index[valid], steps_deg[valid])
+        # Only short gaps are bridged; a long stretch with no rotation-only fit is walking.
+        gap_id = np.cumsum(valid)
+        for gap in np.unique(gap_id[~valid]):
+            members = ~valid & (gap_id == gap)
+            if members.sum() > SPIN_MAX_DROPOUTS:
+                filled[members] = 0.0
     steps_deg = median_filter(filled, size=5, mode="nearest")
     raw_residuals = residuals
     residuals = np.zeros_like(steps_deg)
@@ -269,6 +276,47 @@ def _kabsch(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     return u @ np.diag([1.0, 1.0, d]) @ vt
 
 
+def _rotation_ransac(a: np.ndarray, b: np.ndarray, threshold: float, rng: np.random.Generator,
+                     iterations: int = 300) -> tuple[np.ndarray | None, int]:
+    best, best_count = None, 0
+    for _ in range(iterations):
+        pick = rng.choice(len(a), 2, replace=False)
+        R = _kabsch(a[pick], b[pick])
+        count = int(np.sum(np.linalg.norm(a @ R.T - b, axis=1) < threshold))
+        if count > best_count:
+            best, best_count = R, count
+    if best is None:
+        return None, 0
+    inliers = np.linalg.norm(a @ best.T - b, axis=1) < threshold
+    return _kabsch(a[inliers], b[inliers]), int(inliers.sum())
+
+
+def matched_rotation(grey_a: np.ndarray, grey_b: np.ndarray, K: np.ndarray,
+                     rng: np.random.Generator) -> tuple[np.ndarray | None, int]:
+    """Pure rotation between two frames far apart in time (x_b = R x_a): SIFT matches with
+    Lowe's ratio test, then the same 2-point Kabsch RANSAC as frame-to-frame tracking."""
+    sift = cv2.SIFT_create(1500, contrastThreshold=0.01)
+    # Local contrast equalisation first: painted walls in soft light are very flat.
+    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+    ka, da = sift.detectAndCompute(clahe.apply(grey_a), None)
+    kb, db = sift.detectAndCompute(clahe.apply(grey_b), None)
+    if da is None or db is None or len(ka) < 10 or len(kb) < 10:
+        return None, 0
+    pairs = cv2.BFMatcher(cv2.NORM_L2).knnMatch(da, db, k=2)
+    good = [m for m, n in (p for p in pairs if len(p) == 2) if m.distance < 0.75 * n.distance]
+    if len(good) < 10:
+        return None, 0
+    K_inv = np.linalg.inv(K)
+
+    def bearings(px):
+        rays = np.c_[px, np.ones(len(px))] @ K_inv.T
+        return rays / np.linalg.norm(rays, axis=1, keepdims=True)
+
+    a = bearings(np.array([ka[m.queryIdx].pt for m in good]))
+    b = bearings(np.array([kb[m.trainIdx].pt for m in good]))
+    return _rotation_ransac(a, b, 2.0 / K[0, 0], rng)
+
+
 def rotation_between(grey_prev: np.ndarray, grey: np.ndarray, K: np.ndarray, rng: np.random.Generator,
                      iterations: int = 200, allow_translation: bool = True) -> tuple[np.ndarray | None, int]:
     """Pure-rotation fit between two frames: 3 DoF, so far better conditioned on a sparse,
@@ -334,7 +382,93 @@ def turn_rotations(images: list[np.ndarray], turn: tuple[int, int], K: np.ndarra
         current = current @ R.T
         previous_step = R
         rotations[k] = current.copy()
-    return rotations
+    return _average_turn_rotations(_close_turn_loop(rotations, greys, K, rng), greys, K, rng)
+
+
+AVERAGING_SPAN = 4
+TURN_EDGE_FRAMES = 3
+
+
+def _average_turn_rotations(rotations: dict[int, np.ndarray], greys: dict, K: np.ndarray,
+                            rng: np.random.Generator) -> dict[int, np.ndarray]:
+    """Rotation averaging over the turn: relative rotations from wide-baseline matches
+    between every frame and its next AVERAGING_SPAN frames, plus the loop across 360
+    degrees, then robust chordal Gauss-Seidel from the chain estimate. A single bad
+    frame-to-frame step no longer propagates into everything after it."""
+    frames, heading = _turn_heading(rotations)
+    edges = []
+    for i, a in enumerate(frames):
+        partners = frames[i + 1:i + 1 + AVERAGING_SPAN]
+        partners += [b for b, h in zip(frames, heading) if abs(h - heading[i] - 2 * np.pi) < np.radians(15)]
+        for b in partners:
+            Q, count = matched_rotation(greys[a], greys[b], K, rng)
+            if Q is not None and count >= 25:
+                edges.append((a, b, Q, float(count)))
+    if not edges:
+        return rotations
+    estimate = dict(rotations)
+    for _ in range(15):
+        for k in frames[1:]:
+            total = np.zeros((3, 3))
+            for a, b, Q, count in edges:
+                if b == k:
+                    proposal = estimate[a] @ Q.T
+                elif a == k:
+                    proposal = estimate[b] @ Q
+                else:
+                    continue
+                gap = np.linalg.norm(proposal - estimate[k])
+                total += count / (1 + (gap / 0.05) ** 2) * proposal
+            if np.any(total):
+                u, _, vt = np.linalg.svd(total)
+                estimate[k] = u @ np.diag([1, 1, np.linalg.det(u @ vt)]) @ vt
+    return estimate
+
+
+def _turn_heading(rotations: dict[int, np.ndarray]) -> tuple[list[int], np.ndarray]:
+    """Frames of a turn and each one's heading (radians from the first) about the turn axis."""
+    frames = sorted(rotations)
+    forward = np.array([rotations[k][:, 2] for k in frames])
+    steps = []
+    for a, b in zip(frames[:-1], frames[1:]):
+        relative = rotations[a].T @ rotations[b]
+        axis = np.array([relative[2, 1] - relative[1, 2], relative[0, 2] - relative[2, 0], relative[1, 0] - relative[0, 1]])
+        steps.append(rotations[a] @ axis)
+    axis = np.sum(steps, axis=0) if steps else np.array([0.0, 1.0, 0.0])
+    axis /= max(np.linalg.norm(axis), 1e-12)
+    flat = forward - np.outer(forward @ axis, axis)
+    reference = flat[0] / max(np.linalg.norm(flat[0]), 1e-12)
+    heading = np.unwrap(np.arctan2(flat @ np.cross(axis, reference), flat @ reference))
+    return frames, np.abs(heading - heading[0])
+
+
+def _close_turn_loop(rotations: dict[int, np.ndarray], greys: dict, K: np.ndarray,
+                     rng: np.random.Generator) -> dict[int, np.ndarray]:
+    """A full turn sees its start again: fit the start frame directly against the frames
+    near 360 degrees and spread the chain's discrepancy along the turn by heading."""
+    from scipy.spatial.transform import Rotation
+
+    frames, heading = _turn_heading(rotations)
+    if heading[-1] < np.radians(350):
+        return rotations
+    near = [k for k, h in zip(frames, heading) if np.radians(345) <= h <= np.radians(375)]
+    best, best_count = None, 0
+    for k in near:
+        R, count = matched_rotation(greys[frames[0]], greys[k], K, rng)
+        if R is not None and count > best_count:
+            best, best_count, closing = R, count, k
+    if best is None or best_count < 30:
+        return rotations
+    # Direct estimate of the closing frame's rotation vs the chained one.
+    correction = Rotation.from_matrix(best.T @ rotations[closing].T).as_rotvec()
+    if np.degrees(np.linalg.norm(correction)) > 15:
+        return rotations
+    end_heading = heading[frames.index(closing)]
+    closed = {}
+    for k, h in zip(frames, heading):
+        share = min(h / end_heading, 1.0)
+        closed[k] = Rotation.from_rotvec(share * correction).as_matrix() @ rotations[k]
+    return closed
 
 
 CHAIN_MAX_FPS = 15.0
@@ -441,24 +575,17 @@ def clip_rotations(path: Path, K: np.ndarray, size: tuple[int, int], timestamps:
     return np.array([chain[i] for i in picks])
 
 
-def turn_views(rotations: dict[int, np.ndarray], count: int = 10) -> list[int]:
-    """Frames evenly spaced in heading round one turn, from the turn's chained rotations.
+def turn_views(rotations: dict[int, np.ndarray], per_revolution: int = 14) -> list[int]:
+    """Frames evenly spaced in heading over the turn (up to two revolutions), from the
+    turn's chained rotations.
     Heading is measured about the turn axis (the dominant rotation axis, i.e. vertical),
     so the up-and-down tilting of the protocol does not distort the spacing."""
-    frames = sorted(rotations)
-    forward = np.array([rotations[k][:, 2] for k in frames])
-    steps = []
-    for a, b in zip(frames[:-1], frames[1:]):
-        relative = rotations[a].T @ rotations[b]
-        axis = np.array([relative[2, 1] - relative[1, 2], relative[0, 2] - relative[2, 0], relative[1, 0] - relative[0, 1]])
-        steps.append(rotations[a] @ axis)
-    axis = np.sum(steps, axis=0)
-    axis /= max(np.linalg.norm(axis), 1e-12)
-    flat = forward - np.outer(forward @ axis, axis)
-    reference = flat[0] / max(np.linalg.norm(flat[0]), 1e-12)
-    other = np.cross(axis, reference)
-    heading = np.unwrap(np.arctan2(flat @ other, flat @ reference))
-    heading = np.abs(heading - heading[0])
-    total = float(np.degrees(heading[-1]))
-    targets = np.radians(np.linspace(0, min(total, 360.0), count, endpoint=total < 360.0))
+    frames, heading = _turn_heading(rotations)
+    # The ends of a detected turn are where the walker is still stepping in or already
+    # stepping out: the camera is off the turning axis there.
+    trim = TURN_EDGE_FRAMES if len(frames) > 4 * TURN_EDGE_FRAMES else 0
+    frames, heading = frames[trim:len(frames) - trim], heading[trim:len(heading) - trim] - heading[trim]
+    total = min(float(np.degrees(heading[-1])), 720.0)
+    views = max(4, int(round(per_revolution * total / 360.0)))
+    targets = np.radians(np.linspace(0, total, views, endpoint=total not in (360.0, 720.0)))
     return sorted({frames[int(np.argmin(np.abs(heading - t)))] for t in targets})

@@ -33,7 +33,7 @@ CONSISTENT_SHARE = 0.5
 INCONSISTENT_SCALE_SIGMA = 0.25
 SCALE_BIAS_BUDGET = 0.02
 PHOTO_VOXEL = 0.03
-GRAVITY_PRIOR_WEIGHT = 0.2
+GRAVITY_PRIOR_WEIGHT = 0.02
 # Benchmark ablation hook (roomscope run --oracle-depth): photo -> MetricDepth.
 depth_source = None
 
@@ -423,13 +423,17 @@ def plan_from_photo_sets(folders: dict, capture_id: str, profile, source_app: st
         sigmas = np.array([np.hypot(line.sigma, 0.25 * line.spread) for line in layout.lines])
         neighbours = {}
         converted = []
+        mirrors = [o for o in rec.openings if o.kind == "mirror"]
         for k, o in enumerate(rec.openings):
+            if o.kind == "mirror":
+                continue
             other = partner.get((name, k))
             if other:
                 neighbours.setdefault(o.wall, []).append(other[0])
             converted.append(OpeningGeometry(o.wall, o.kind, o.u0, o.u1, o.v0, o.v1, o.sigma_u0, o.sigma_u1,
                                              o.sigma_v0, o.sigma_v1, o.confidence, other[0] if other else None, other))
-        damage = analyse_room(layout, rec.openings, [], rec.frames, rec.poses, name, neighbours)
+        damage = analyse_room(layout, [o for o in rec.openings if o.kind != "mirror"], mirrors, rec.frames, rec.poses,
+                              name, neighbours)
         for key in ("floor", "ceiling"):
             for det in damage.detections.get(key, []):
                 det.polygon_uv = transform.apply(det.polygon_uv)

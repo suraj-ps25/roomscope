@@ -139,14 +139,15 @@ def write_lidar_tier(scene_path: str | Path, out: Path, route: list[str], seed: 
 
 
 def write_video_tier(scene_path: str | Path, out: Path, route: list[str], fps: float = 10.0,
-                     size: tuple[int, int] = (1280, 720), seed: int = 0,
+                     size: tuple[int, int] = (720, 1280), seed: int = 0,
                      exposure: float = 1.0, noise: float = 0.01) -> None:
+    """Portrait clip, as the video protocol asks: the turns need the tall field of view."""
     scene = load_scene(scene_path)
-    trajectory = walkthrough(scene, route, fps=fps, seed=seed, perimeter=False)
-    # Video is a 16:9 crop of the 4:3 sensor at the same horizontal FOV, plus a little
-    # stabilisation crop.
-    camera = Camera.iphone_main(*size)
-    camera = Camera(camera.width, camera.height, camera.fx * 1.08, camera.fy * 1.08, camera.cx, camera.cy)
+    trajectory = walkthrough(scene, route, fps=fps, seed=seed, perimeter=False, spin_style="double")
+    # Video is a 16:9 crop of the 4:3 sensor at the same long-side FOV, plus a little
+    # stabilisation crop; held upright, the long side is vertical.
+    fx = 0.75 * max(size) * 1.08
+    camera = Camera(size[0], size[1], fx, fx, size[0] / 2 - 0.5, size[1] / 2 - 0.5)
     out.mkdir(parents=True, exist_ok=True)
     encoder = subprocess.Popen(
         ["ffmpeg", "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24",
