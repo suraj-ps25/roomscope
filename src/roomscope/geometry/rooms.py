@@ -154,8 +154,17 @@ def _wall_directions(normals: np.ndarray) -> list[float]:
     from scipy.signal import find_peaks
     peaks, _ = find_peaks(np.concatenate([smooth[-3:], smooth, smooth[:3]]), height=MIN_DIRECTION_SHARE * len(theta),
                           distance=int(15 / DIRECTION_BIN_DEG))
-    angles = sorted({round(float(edges[(p - 3) % len(hist)] + np.deg2rad(DIRECTION_BIN_DEG) / 2), 4) for p in peaks})
-    return angles
+    coarse = sorted({float(edges[(p - 3) % len(hist)] + np.deg2rad(DIRECTION_BIN_DEG) / 2) for p in peaks})
+    # Refine each peak to the mean direction of the normals near it. A bin centre can be a
+    # degree off, and over a 5 m wall a degree moves the line 9 cm: the trace then fits
+    # only part of the wall and stops short, leaving a gap a room leaks through.
+    angles = []
+    for angle in coarse:
+        gap = np.mod(theta - angle + np.pi / 2, np.pi) - np.pi / 2
+        near = np.abs(gap) < np.deg2rad(2 * DIRECTION_BIN_DEG)
+        refined = angle + (float(np.mean(gap[near])) if near.any() else 0.0)
+        angles.append(round(float(np.mod(refined, np.pi)), 5))
+    return sorted(set(angles))
 
 
 def wall_segments(points: np.ndarray, normals: np.ndarray) -> list[WallSegment]:
@@ -185,6 +194,33 @@ def wall_segments(points: np.ndarray, normals: np.ndarray) -> list[WallSegment]:
                 if b - a >= SEGMENT_MIN_M:
                     segments.append(WallSegment(angle, offset, float(a), float(b)))
     return segments
+
+
+COLLINEAR_M = 0.03
+
+
+def extend_along_walls(segments: list[WallSegment], points: np.ndarray, normals: np.ndarray) -> list[WallSegment]:
+    """Extend each under-ceiling trace along its own line wherever wall surface continues at
+    any height. The band under the ceiling is what tells a wall from a wardrobe, but parts
+    of a wall are often never seen that high (near a corner, behind the first doorway); the
+    wall below is still on the same line, and furniture fronts are not."""
+    extended = []
+    for seg in segments:
+        on_line = (np.abs(points @ seg.normal - seg.offset) < COLLINEAR_M) & (np.abs(normals @ seg.normal) > 0.9)
+        along = np.sort(points[on_line] @ seg.tangent)
+        start, end = seg.start, seg.end
+        below = along[along < start][::-1]
+        for value in below:
+            if start - value > SEGMENT_GAP_M:
+                break
+            start = value
+        above = along[along > end]
+        for value in above:
+            if value - end > SEGMENT_GAP_M:
+                break
+            end = value
+        extended.append(WallSegment(seg.angle, seg.offset, float(start), float(end)))
+    return extended
 
 
 def complete_corners(segments: list[WallSegment]) -> list[WallSegment]:
@@ -262,6 +298,7 @@ def _under_ceiling(cloud: Cloud) -> np.ndarray:
 
 
 ROOF_REACH_M = 0.25
+ROOF_CLOSE_M = 0.5
 
 
 def _roofed(cloud: Cloud, origin: np.ndarray, shape: tuple[int, int]) -> np.ndarray:
@@ -272,7 +309,12 @@ def _roofed(cloud: Cloud, origin: np.ndarray, shape: tuple[int, int]) -> np.ndar
     if ceiling.sum() < 200:
         return np.ones(shape, dtype=bool)
     seen = _rasterise(cloud.points[ceiling, :2], origin, shape) > 0
-    return ndimage.binary_dilation(seen, iterations=int(round(ROOF_REACH_M / CELL)))
+    roofed = ndimage.binary_dilation(seen, iterations=int(round(ROOF_REACH_M / CELL)))
+    # Patches of ceiling nobody looked at are enclosed by ceiling that was seen; the space
+    # outside an exterior door is not. Close small gaps, then fill what is enclosed.
+    closing = int(round(ROOF_CLOSE_M / CELL))
+    roofed = ndimage.binary_closing(roofed, structure=np.ones((3, 3)), iterations=closing)
+    return ndimage.binary_fill_holes(roofed)
 
 
 def _grow_to_walls(mask: np.ndarray, walls: np.ndarray, others: np.ndarray) -> np.ndarray:
@@ -331,8 +373,10 @@ def segment_rooms(cloud: Cloud, frames, poses: dict[int, np.ndarray],
     # Barriers are long straight wall traces that reach the ceiling. Real walls and door
     # headers do; clutter above door height mostly doesn't (shower screens and rails,
     # tall cabinets, pendant lamps) and would otherwise cut a room into pieces.
-    traces = complete_corners([s for s in wall_segments(cloud.points[wall, :2], cloud.normals[wall, :2])
-                               if s.end - s.start >= BARRIER_MIN_M])
+    vertical = np.abs(cloud.normals[:, 2]) < 0.3
+    traces = complete_corners(extend_along_walls(
+        [s for s in wall_segments(cloud.points[wall, :2], cloud.normals[wall, :2]) if s.end - s.start >= BARRIER_MIN_M],
+        cloud.points[vertical, :2], cloud.normals[vertical, :2]))
     wall_grid = ndimage.binary_dilation(_draw_segments(traces, origin, shape), structure=np.ones((3, 3)))
     free = (carve_free_space(frames, poses, origin, shape) >= 3) & ~wall_grid
     roofed = _roofed(cloud, origin, shape)
