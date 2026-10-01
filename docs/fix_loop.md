@@ -224,7 +224,7 @@ Per-recording tables: `real-openings-*` in [`results/`](../benchmark/fix_loop/re
   what's wrong: the depth is.
 - **Fix:** a per-device depth-scale calibration measured on the dev visits only (×1.0088),
   applied to that device's depth only. Uncalibrated devices are left alone.
-- **Prediction** (stated before measuring the held-out visits): held-out ceilings within
+- **Expected** (not a committed declaration; this was the second fix): held-out ceilings within
   1.5 cm about 4 → 7 of 10.
 
 | every real recording | before | after |
