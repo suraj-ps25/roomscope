@@ -17,6 +17,11 @@ mkdir -p "$OUT"
 echo "== LiDAR: 3 captures of the flat, drift correction on and off"
 $PY benchmark/run_sim.py --tier lidar --seeds 0 1 2 --drift 1.0 --ablation --out "$OUT/lidar"
 
+echo "== LiDAR at full RGB resolution (1920x1440, as Stray Scanner records it), for damage"
+[[ -f data/captures/sim_flat_a_lidar/ground_truth.json ]] || $RS sim benchmark/sim/flat_a.yaml --tier lidar --out data/captures/sim_flat_a_lidar
+$RS run data/captures/sim_flat_a_lidar --out "$OUT/flat_a_lidar_fullres"
+$RS eval "$OUT/flat_a_lidar_fullres/plan.json" data/captures/sim_flat_a_lidar/ground_truth.json --out "$OUT/flat_a_lidar_fullres/metrics.json"
+
 echo "== photo and video on the synthetic flat: depth model and rendered true depth"
 for tier in photo video; do
   capture=data/captures/sim_flat_a_$tier

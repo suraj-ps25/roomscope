@@ -126,6 +126,34 @@ def depth_section(bench: Path) -> list[str]:
     return lines
 
 
+def damage_section(bench: Path) -> list[str]:
+    lines = ["## Damage", "",
+             "Staged damage on the synthetic flat (a water stain and a crack in the bedroom, mould on the bathroom ceiling),",
+             "and the undamaged scanned rooms, where every reported region is a false positive. Extent error is area for",
+             "stains and mould, length for cracks.", ""]
+    rows = []
+    for name, label in (("flat_a_lidar_fullres", "LiDAR, full-res RGB"), ("flat_a_video_model", "video, depth model"),
+                        ("flat_a_photo_model", "photo, depth model")):
+        metrics = _load(bench / name / "metrics.json")
+        if not metrics or "damage" not in metrics:
+            continue
+        d = metrics["damage"]
+        extents = ", ".join(f"{x['class']} {x['relative_error']:+.0%}" for x in d["detail"] if x["relative_error"] is not None)
+        rows.append({"synthetic flat": label, "found": f"{d['found']}/{d['staged']}", "false positives": d["false_positives"],
+                     "extent error": extents or "–"})
+    lines += _table(rows, "synthetic flat") + [""]
+    fp = {"photo": [], "video": []}
+    for path in sorted((bench / "replica").glob("*_model/plan.json")):
+        tier = "video" if "_video_" in path.parent.name else "photo"
+        plan = json.loads(path.read_text())
+        fp[tier].append(sum(len(s.get("damage_regions", [])) for r in plan["rooms"] for s in r["surfaces"]))
+    for tier, counts in fp.items():
+        if counts:
+            lines.append(f"- Undamaged scanned rooms, {tier}: {sum(counts)} false regions over {len(counts)} rooms "
+                         f"({sum(c == 0 for c in counts)} rooms clean).")
+    return lines + [""]
+
+
 def calibration_section(bench: Path) -> list[str]:
     lines = ["## Interval calibration", "",
              "Propagated intervals (fit uncertainty through the geometry, plus the tier's scale budget) are scaled per tier",
@@ -160,7 +188,7 @@ def main() -> int:
              "the depth model's measured scale error on real iPad imagery. Gates are the brief's: openings ≤ 2 cm on",
              "≥ 85% (misses and phantoms count), ceiling ≤ 1.5 cm, walls ±3% (video) / ±8% (photo), footprint ±8%.", ""]
     lines += (lidar_section(bench) + flat_section(bench) + replica_section(bench) + depth_section(bench)
-              + calibration_section(bench))
+              + damage_section(bench) + calibration_section(bench))
     Path(args.out).write_text("\n".join(lines) + "\n")
     print(f"wrote {args.out}")
     return 0
