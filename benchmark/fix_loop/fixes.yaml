@@ -89,3 +89,18 @@
   flags: []
   before: 9805f2f
   after: a3d59a8
+
+- id: lidar-segmentation
+  title: Rooms merged through gaps in the wall traces
+  symptom: >-
+    LiDAR, flat_a seed 1, after lidar-loop-tear had fixed its trajectory: adjacency still
+    wrong and a 13.8 cm ceiling error; the hallway segmented together with the bathroom.
+  cause: >-
+    Wall directions were 2-degree histogram bin centres, so a trace a degree off fitted only
+    part of a 5 m wall and stopped short; walls never seen just under the ceiling had no
+    barrier at all; the observed-ceiling mask left holes where nobody looked up.
+  fix: refined wall directions; traces extended along their own wall at any height; roof mask with hole filling
+  capture: data/captures/simbench/flat_a_lidar_d1_s1
+  flags: []
+  before: b31c18c
+  after: 2d74357

@@ -27,7 +27,8 @@ For each entry, both commits are checked out into git worktrees and run on the
 **identical capture**, each with its own code; both plans are scored by the **current**
 evaluator, so before and after are measured with the same ruler. Output goes to
 `runs/fix_loop/<id>/{before,after}/` (plan.json, plan.png, metrics.json) with a
-`diff.md` table.
+`diff.md` table; the last regeneration's tables are kept in
+[`benchmark/fix_loop/results/`](../benchmark/fix_loop/results/).
 
 ## Entries
 
@@ -91,6 +92,24 @@ evaluator, so before and after are measured with the same ruler. Output goes to
   every edge, so the solver switched off the one odometry edge that disagreed with them.
 - **Fix:** IRLS with Cauchy weights on loop closures only; odometry is never robustified.
   Trajectory error median 5.1 → 1.1 cm (seed 1), 4.5 → 0.7 cm (seed 0).
+- **What the regeneration shows:** the trajectory fix alone did not restore seed 1's gates
+  (openings 5/10 → 5/9, adjacency still wrong, ceiling 1.1 → 13.8 cm), because a second,
+  independent fault was in segmentation; the regenerated table records exactly that, and
+  the next entry fixes it. Trajectory error isn't in the plan, so it is measured against the
+  simulator's poses by the diagnostic described above, not by `regenerate.py`.
+
+### lidar-segmentation: rooms merged through gaps in the wall traces (`b31c18c` → `2d74357`)
+
+- **Symptom:** seed 1 with its trajectory fixed: the hallway segmented together with the
+  bathroom (adjacency wrong, ceiling 13.8 cm off).
+- **Isolation:** the same segmentation on the old and new poses differed only in where
+  traces stopped: with the better poses, a 5 m wall's trace ended 2.2 m short.
+- **Cause:** wall directions were 2° histogram bin centres; a degree off moves a 5 m trace
+  9 cm, so it fitted only part of the wall. Walls never seen just under the ceiling had no
+  barrier, and the observed-ceiling mask left holes where nobody looked up.
+- **Fix:** directions refined to the mean of the normals; traces extended along their own
+  wall wherever it continues at any height; small gaps in the ceiling mask closed and
+  enclosed holes filled.
 
 ### photo-depth-cap: far walls vanished from photo reconstructions (`bdb7174` → `a1a7bf5`)
 
