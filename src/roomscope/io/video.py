@@ -134,31 +134,42 @@ ROTATION_ONLY_PX = 3.0
 
 
 def yaw_steps(images: list[np.ndarray], K: np.ndarray, homographies: dict | None = None) -> tuple[np.ndarray, np.ndarray]:
-    """Rotation about the camera's vertical axis between consecutive frames, from a
-    homography on tracked features (H = K R K^-1 for a purely rotating camera), and the
-    homography's median residual in pixels. Standing still and turning, a homography
-    explains every point; walking, parallax leaves pixels of residual."""
+    """Rotation about the camera's vertical axis between consecutive frames, and how well a
+    pure rotation explains the tracked features (median reprojection residual, px).
+    Standing still and turning, a rotation explains every point; walking, parallax leaves
+    pixels of residual. The yaw comes from a 3-DoF rotation fit (robust on low-texture walls where an
+    8-DoF homography degenerates); homographies are kept for focal self-calibration."""
     steps = np.zeros(len(images))
     residuals = np.full(len(images), np.inf)
     K_inv = np.linalg.inv(K)
-    grey_prev = cv2.cvtColor(images[0], cv2.COLOR_RGB2GRAY)
+    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+    rng = np.random.default_rng(0)
+    grey_prev = clahe.apply(cv2.cvtColor(images[0], cv2.COLOR_RGB2GRAY))
     for k in range(1, len(images)):
-        grey = cv2.cvtColor(images[k], cv2.COLOR_RGB2GRAY)
+        grey = clahe.apply(cv2.cvtColor(images[k], cv2.COLOR_RGB2GRAY))
         points = cv2.goodFeaturesToTrack(grey_prev, 400, 0.01, 7)
         if points is not None and len(points) >= 12:
-            moved, status, _ = cv2.calcOpticalFlowPyrLK(grey_prev, grey, points, None)
-            ok = status.ravel() == 1
+            moved, status, _ = cv2.calcOpticalFlowPyrLK(grey_prev, grey, points, None, winSize=(25, 25), maxLevel=4)
+            back, back_status, _ = cv2.calcOpticalFlowPyrLK(grey, grey_prev, moved, None, winSize=(25, 25), maxLevel=4)
+            # Forward-backward check: a track that does not come back to where it started is
+            # drifting on low texture, and would read as parallax.
+            round_trip = np.linalg.norm((back - points).reshape(-1, 2), axis=1)
+            ok = (status.ravel() == 1) & (back_status.ravel() == 1) & (round_trip < 1.0)
             if ok.sum() >= 12:
+                a = np.c_[points[ok].reshape(-1, 2), np.ones(ok.sum())] @ K_inv.T
+                b = np.c_[moved[ok].reshape(-1, 2), np.ones(ok.sum())] @ K_inv.T
+                a /= np.linalg.norm(a, axis=1, keepdims=True)
+                b /= np.linalg.norm(b, axis=1, keepdims=True)
+                # The stand-still test uses the homography residual, which does not depend on
+                # K (the focal is not calibrated yet when turns are being found).
                 H, _ = cv2.findHomography(points[ok], moved[ok], cv2.RANSAC, 3.0)
                 if H is not None:
                     projected = cv2.perspectiveTransform(points[ok].reshape(-1, 1, 2), H).reshape(-1, 2)
                     residuals[k] = float(np.median(np.linalg.norm(projected - moved[ok].reshape(-1, 2), axis=1)))
                     if homographies is not None:
                         homographies[k] = H
-                    R = K_inv @ H @ K
-                    u, _, vt = np.linalg.svd(R)
-                    R = u @ vt
-                    # Rotation about the camera y axis (vertical for an upright phone).
+                R, count = _rotation_ransac(a, b, 3.0 / K[0, 0], rng, iterations=100)
+                if R is not None and count >= 8:
                     steps[k] = float(np.arctan2(R[0, 2], R[2, 2]))
         grey_prev = grey
     return np.degrees(steps), residuals
@@ -326,7 +337,9 @@ def rotation_between(grey_prev: np.ndarray, grey: np.ndarray, K: np.ndarray, rng
     if points is None or len(points) < 8:
         return None, 0
     moved, status, _ = cv2.calcOpticalFlowPyrLK(grey_prev, grey, points, None, winSize=(25, 25), maxLevel=4)
-    ok = status.ravel() == 1
+    back, back_status, _ = cv2.calcOpticalFlowPyrLK(grey, grey_prev, moved, None, winSize=(25, 25), maxLevel=4)
+    round_trip = np.linalg.norm((back - points).reshape(-1, 2), axis=1)
+    ok = (status.ravel() == 1) & (back_status.ravel() == 1) & (round_trip < 1.0)
     if ok.sum() < 8:
         return None, 0
     K_inv = np.linalg.inv(K)
