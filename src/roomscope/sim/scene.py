@@ -340,6 +340,8 @@ def ground_truth(scene: SceneSpec) -> dict:
             if decal.room != room.id or decal.kind not in DAMAGE_CLASSES:
                 continue
             entry = {"id": decal.id, "class": decal.kind, "surface": decal.surface}
+            shape = np.asarray(decal.polyline_uv if decal.polyline_uv is not None else decal.polygon_uv)
+            entry["extent_uv"] = [round(float(v), 4) for v in (*shape.min(axis=0), *shape.max(axis=0))]
             if decal.polyline_uv is not None:
                 segs = np.diff(decal.polyline_uv, axis=0)
                 crack_length = float(np.linalg.norm(segs, axis=1).sum())
