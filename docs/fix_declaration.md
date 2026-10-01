@@ -1,7 +1,9 @@
 # Fix declaration
 
-Written and committed before the fix. The outcome is in [`fix_loop.md`](fix_loop.md)
-under `real-openings`, and the before and after regenerate with
+Written and committed before the fix (`7e5e7be`). **Outcome:** every predicted number
+was met (phantoms 12 → 9, misses 6 → 5, scored 29 → 26, passes 2), after one correction
+caught on the way. The gate still fails, for the reasons set aside in section 2. The full
+before and after are in [`fix_loop.md`](fix_loop.md); per recording they regenerate with
 `python benchmark/fix_loop/regenerate.py real-openings-<recording>`.
 
 ## 1. The worst gate
