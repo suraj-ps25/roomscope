@@ -24,6 +24,8 @@ MIN_EDGE_M = 0.25
 CORNER_MARGIN_M = 0.15
 UPPER_BAND_M = 0.6
 EFFECTIVE_POINTS_CAP = 400
+CEILING_PRIOR_M = 2.6
+CEILING_PRIOR_SIGMA_M = 0.3
 
 
 @dataclass
@@ -180,10 +182,24 @@ def room_layout(region: RoomRegion, cloud: Cloud, tol: Tolerances = LIDAR_TOL) -
     core = eroded.contains(points.points[:, :2])
     floor_rows = core & (points.normals[:, 2] > 0.9) & (points.points[:, 2] < 0.3)
     ceiling_rows = core & (points.normals[:, 2] < -0.9) & (points.points[:, 2] > 1.8)
-    if floor_rows.sum() < 50 or ceiling_rows.sum() < 50:
-        notes.append("floor or ceiling barely observed; heights unreliable")
+    if floor_rows.sum() < 50:
+        notes.append("floor barely observed; heights unreliable")
     floor_z, floor_sigma = _level(points.points[floor_rows, 2]) if floor_rows.sum() else (0.0, 0.05)
-    ceiling_z, ceiling_sigma = _level(points.points[ceiling_rows, 2]) if ceiling_rows.sum() else (2.5, 0.2)
+    # The band walls are checked in sits under the ceiling; without a ceiling it is the top
+    # of what the camera saw of the walls instead.
+    walls_seen = points.points[np.abs(points.normals[:, 2]) < 0.3, 2]
+    seen_top = float(np.percentile(walls_seen, 99)) if len(walls_seen) else floor_z + 2.0
+    if ceiling_rows.sum() >= 50:
+        ceiling_z, ceiling_sigma = _level(points.points[ceiling_rows, 2])
+        band_top = ceiling_z
+    else:
+        # Not observed: a prior (most ceilings are 2.4-3.0 m), never below the walls that were
+        # seen, with an uncertainty that says so.
+        ceiling_z = max(floor_z + CEILING_PRIOR_M, seen_top + 0.05)
+        ceiling_sigma = CEILING_PRIOR_SIGMA_M
+        band_top = seen_top + 0.05
+        notes.append(f"ceiling not observed (the camera never looked up): height is a prior, "
+                     f"at least {seen_top - floor_z:.2f} m where walls were seen")
 
     edges = _regularise(_mask_polygon(region))
     lines: list[WallLine] = []
@@ -218,7 +234,7 @@ def room_layout(region: RoomRegion, cloud: Cloud, tol: Tolerances = LIDAR_TOL) -
         polygon = _corners(lines)
         if polygon is None:
             break
-        coverage = [_upper_coverage(points, line, polygon[k], polygon[(k + 1) % len(polygon)], ceiling_z, tol)
+        coverage = [_upper_coverage(points, line, polygon[k], polygon[(k + 1) % len(polygon)], band_top, tol)
                     for k, line in enumerate(lines)]
         worst = int(np.argmin(coverage))
         if coverage[worst] >= MIN_UPPER_COVERAGE:
