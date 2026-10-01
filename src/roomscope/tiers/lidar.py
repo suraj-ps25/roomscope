@@ -162,6 +162,8 @@ def run_lidar(bundle: CaptureBundle, options: LidarOptions | None = None) -> Lid
     damage_by_room = {}
     if options.damage:
         from ..damage.stage import analyse_room
+        # Decode every keyframe's colour once, up front; surfaces then pick from the cache.
+        bundle.warm_rgb(frames)
         for rid, layout in layouts.items():
             neighbours: dict[int, list[str]] = {}
             for o in openings_by_room.get(rid, []):
