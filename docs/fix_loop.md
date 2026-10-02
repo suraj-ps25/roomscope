@@ -212,7 +212,10 @@ widths. The remaining failures are the ones the declaration set aside:
 - plans whose wall count differs from the survey's, so their openings can't be placed on
   the truth's walls.
 
-Per-recording tables: `real-openings-*` in [`results/`](../benchmark/fix_loop/results/).
+Regenerate the table above with `python benchmark/fix_loop/regenerate_real.py 7e5e7be 1b84c55`
+(both commits run in worktrees on the same recordings, one evaluator); the before and after
+runs are in `benchmark/fix_loop/results/real/`. Per-recording tables: `real-openings-*` in
+[`results/`](../benchmark/fix_loop/results/).
 
 ### real-ceiling-scale: every real ceiling read low (`7f5bd43` → `561189d`)
 

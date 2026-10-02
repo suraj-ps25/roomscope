@@ -4,7 +4,9 @@ Written and committed before the fix (`7e5e7be`). **Outcome:** every predicted n
 was met (phantoms 12 → 9, misses 6 → 5, scored 29 → 26, passes 2), after one correction
 caught on the way. The gate still fails, for the reasons set aside in section 2. The full
 before and after are in [`fix_loop.md`](fix_loop.md); per recording they regenerate with
-`python benchmark/fix_loop/regenerate.py real-openings-<recording>`.
+`python benchmark/fix_loop/regenerate.py real-openings-<recording>`, and across every real
+recording with `python benchmark/fix_loop/regenerate_real.py 7e5e7be 1b84c55`. The before
+and after runs are in `benchmark/fix_loop/results/real/`.
 
 ## 1. The worst gate
 
