@@ -19,8 +19,8 @@ Results are in [`benchmark_report.md`](benchmark_report.md); requirement coverag
   with exact metric truth); real iPad frames with LiDAR depth (the depth model's metric
   scale on real imagery); and **real iPad Pro LiDAR recordings of real rooms scored
   against laser scans** (Apple's ARKitScenes, §8), on dev visits and on held-out visits
-  run once. The head-to-head and the walk-in on our own phone captures are scripted but
-  not run.
+  run once. The head-to-head was run on a recording's raw cloud (§8); the walk-in on our
+  own phone captures is scripted but not run.
 - **Every number has an interval.** The schema requires `ci_low`/`ci_high` on every
   measurement; intervals are propagated, then calibrated per tier (§6).
 
@@ -201,6 +201,12 @@ were **held out**, chosen by rule before being looked at.
     wide interval. The flat comes out as 8 rooms either way.
   - Decoding the video took 39 of 43 minutes on a 3.5-minute scan. One sequential decode
     makes the whole run 5.4 minutes, cold.
+- **Head-to-head without a phone.** Consumer scanning apps only take a live scan, so the
+  bathroom's raw LiDAR (iPad poses, no correction of ours) went as a point cloud into
+  Pointorama's automatic room tools, unedited. Against the laser, we beat or tie 8 of 8
+  quantities (7 of 8 with our depth calibration off, on identical input): its outline
+  stepped through the doorway (wall errors 3–92 cm against our 0.5–3.8 cm), and it
+  reported no openings (`benchmark/head_to_head/`).
 
 The full tables are in [`benchmark_report.md`](benchmark_report.md).
 
@@ -234,8 +240,9 @@ entries regenerate from their two commits on an identical capture with one score
 - **Segmentation sits on thresholds** where bulkheads, ceiling steps and headers look
   alike. A dev room split at a bulkhead after the depth-scale change. Small rooms sprout
   sliver walls.
-- **Our own captures.** The head-to-head needs a phone and was not run. The photo and video
-  tiers have no on-protocol real capture with laser truth.
+- **Our own captures.** The head-to-head ran on an uploaded cloud in a professional tool,
+  not a consumer app's own scan on the same phone. The photo and video tiers have no
+  on-protocol real capture with laser truth.
 - **Monocular scale.** The video ±3% gate is not met. The next lever is a door-height prior
   (interior doors are ~2.03 m, σ ≈ 2%).
 - **Photo/video layouts are rectangles.** L-shaped rooms read as their bounding rectangle.
