@@ -260,8 +260,7 @@ entry regenerates from their two commits on an identical capture with one scorer
 - **Real openings** stay far from the 85% gate (7 of 23 on dev, 0 of 8 held-out). Next: jamb
   edges from the colour image, not 256×192 depth.
 - **Segmentation sits on thresholds** where bulkheads, ceiling steps and headers look
-  alike. A dev room split at a bulkhead after the depth-scale change. Small rooms sprout
-  sliver walls.
+  alike: a dev room split at a bulkhead after the depth-scale change.
 - **Our own captures.** The head-to-head ran on an uploaded cloud in a professional tool,
   not a consumer app's own scan on the same phone. The photo and video tiers have no
   on-protocol real capture with laser truth.
@@ -270,11 +269,10 @@ entry regenerates from their two commits on an identical capture with one scorer
   (`fix_loop.md`): the depth model's scale varies by 6.7% from scene to scene on real
   iPad frames, and no global correction removes a per-scene spread.
 - **Photo/video layouts are rectangles.** L-shaped rooms read as their bounding rectangle.
-- **Thin photo input** (2–3 photos a room) is honest, not accurate: rooms come out
-  unconnected and walls tens of centimetres off; such rooms carry their own, 2.3× wider
-  interval table (91% left-out coverage).
-- **Low light** (35% exposure, 3× noise, simulated): LiDAR geometry is unchanged but damage
-  recall drops 3/3 → 0/3; video keeps one room of four; photo degrades to 27% walls with
-  52% coverage, the one place intervals still overstate confidence.
-- **Damage** recall is validated on synthetic staging only (3/3 at the staged places).
-  Real undamaged rooms still report 2–11 false regions.
+- **Thin photo input** (2–3 photos a room) is honest, not accurate: rooms unconnected,
+  walls tens of centimetres off, intervals 2.3× wider (91% left-out coverage).
+- **Low light** (simulated, 35% exposure, 3× noise): LiDAR geometry unchanged, damage
+  recall 3/3 → 0/3; video keeps one room of four; photo 27% walls at 52% coverage, the
+  one place intervals still overstate confidence.
+- **Damage** recall is validated on synthetic staging only (3/3); real undamaged rooms
+  report 2–11 false regions.
