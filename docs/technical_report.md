@@ -128,7 +128,16 @@ full-length sill bench 15 cm in front of a window wall. Glimpses through doorway
 "sky" planes behind windows are farther out, so nearest-first ignores them. L-shaped
 rooms come out as their bounding rectangle, a stated limitation.
 
-## 6. Uncertainty
+## 6. Error budget and calibration
+
+| tier | dominant error | measured size | how it is handled | wall multiplier, held-out coverage |
+|---|---|---|---|---|
+| LiDAR | depth scale of the device | −0.88% (iPad Pro) | per-device scale ×1.0088 (§8) | ×4.23; 71% median on real recordings |
+| LiDAR | VIO drift | 1%/m + 2 mm budget | pose graph + plane-anchored adjustment (§3) | (in the above) |
+| LiDAR | jamb edges at 256×192 | ±3–7 cm on openings | density-mode reveal fit | openings ×2.04 |
+| video | depth model's per-scene scale | sd 5.9%, −14% to +4% | carried in the interval, not removable by averaging | ×8.34; 88% |
+| video | geometry alone (true depth) | worst wall 1.9% median | turns + multi-view | (in the above) |
+| photo | depth model's per-scene scale | as video | carried in the interval; views joined by matched 3D points (§5) | ×2.11; 92% |
 
 `build.py` propagates each measurement's uncertainty:
 - wall length from the neighbouring walls' fit sigmas through the corner intersections;
