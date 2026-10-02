@@ -218,3 +218,20 @@
   flags: []
   before: 7f5bd43
   after: 561189d
+
+- id: real-sliver-walls
+  title: Captures of one room disagreed on its wall sequence
+  symptom: >-
+    Repeatability on real recordings: of 12 pairs of recordings of the same room, 5 could
+    not be compared at all (different wall counts) and the rest agreed on 11 of 42 walls;
+    walls of 0.01-0.26 m appeared in some recordings of a room and not others.
+  cause: >-
+    A sliver at a cut corner, or a few-centimetre step between two faces of one wall, is
+    fitted as its own wall in one capture and not in another; every wall after it is then
+    paired with the wrong wall.
+  fix: walls under 0.3 m absorbed into their neighbours in the reported layout (steps over 5 cm kept)
+  capture: data/public/arkitscenes/44358256
+  truth: benchmark/ground_truth/arkitscenes_438802.yaml
+  flags: []
+  before: 23cb877
+  after: 7c2909e
