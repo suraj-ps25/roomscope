@@ -123,7 +123,17 @@ def build_parser() -> argparse.ArgumentParser:
     sim.add_argument("--rgb-width", type=int, default=1920, help="lidar tier RGB width (4:3); smaller is faster")
     sim.set_defaults(func=_sim)
 
+    srv = sub.add_parser("serve", help="a page in the browser: drop a capture in, get the plan (no terminal needed)")
+    srv.add_argument("--port", type=int, default=8765)
+    srv.add_argument("--open", action="store_true", help="open the page in the default browser")
+    srv.set_defaults(func=_serve)
+
     return parser
+
+
+def _serve(args: argparse.Namespace) -> int:
+    from .serve import serve
+    return serve(args.port, args.open)
 
 
 def _eval(args: argparse.Namespace) -> int:
