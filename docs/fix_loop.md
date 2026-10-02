@@ -298,6 +298,24 @@ bar for shipping was a spread under ~3.5%; nothing came close, so no code change
 photo and video wall gates remain bound by monocular metric scale. Depth Anything V2 ran
 at 0.2 s a view; Depth Pro at several seconds.
 
+### photo-thin-input: intervals too narrow with 2 photos a room (declared before the code)
+
+- **Symptom:** the brief's photo tier is 2 to 8 stills a room. The synthetic flat with 2
+  photos a room (two different choices of which two) still gives 4 rooms, but walls 59–69
+  cm off, no rooms connected, footprint 29–38% small, and the 90% intervals cover the truth
+  on 77% and 68% of quantities: confident garbage on thin input, which the brief says caps
+  the score. With all photos the same flat covers 96%.
+- **Isolation:** the room's scale sigma assumes the depth model's error averages out over
+  photos (6.9%/√n); it is a per-scene bias the views share, and with 2 photos most of the
+  error is where the walls are, not scale. One calibration table for every photo count
+  fits the well-covered rooms it was fitted on.
+- **Fix:** each room reports how many photos it used (`quality.views`). Rooms with 3 or
+  fewer get their own split-conformal table, fitted on thin versions of the existing
+  photo captures (every scanned room and the flat, cut to 2 and 3 photos a room), with
+  coverage checked leaving one property out. Rooms with more photos keep today's table.
+- **Predicted:** left-out coverage of thin-input walls ≥ 85% (from 68–77%), at intervals
+  roughly two to three times today's on those rooms; rooms with 4+ photos unchanged.
+
 ### A fix that was not shipped: a ceiling-height scale prior for photo and video
 
 - **Symptom:** on real iPad frames one photo-tier bathroom came out 33% small, with a
