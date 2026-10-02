@@ -10,10 +10,14 @@ room report; Polycam: the room's measurement overlay or DXF), keyed like ground 
     bedroom:
       walls: [3.61, 3.39, 3.60, 3.41]       # same wall order as ground truth
       ceiling_height: 2.70
-      openings: [0.86, 1.19]                # widths, ground-truth order
+      openings: [0.86, 1.19]                # widths, ground-truth order (a door is
+                                            # matched only to our doors, a window to windows)
+      floor_area: 12.24                     # optional, m2
 
 A quantity is a win when our error is smaller, a tie when both are within TIE_M of each
-other; the brief asks for >= 70% of quantities beaten or tied.
+other (TIE_M2 for area); the brief asks for >= 70% of quantities beaten or tied. A
+ground-truth opening the app didn't report is scored as found by neither, found by us
+only, so a tool that reports no openings is not let off them.
 """
 
 from __future__ import annotations
@@ -31,6 +35,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from roomscope.benchmark.evaluate import _cyclic_alignment, load_ground_truth, match_rooms  # noqa: E402
 
 TIE_M = 0.005
+TIE_M2 = 0.05
 TARGET_SHARE = 0.70
 
 
@@ -49,16 +54,27 @@ def compare(app: dict, plan: dict, truth: dict) -> dict:
             rows.append((room_id, f"wall {k}", true_length, measured["walls"][k], mine))
         rows.append((room_id, "ceiling", gt["ceiling_height"], measured.get("ceiling_height", np.nan),
                      ours["ceiling_height"]["value"]))
-        ours_openings = sorted(o["width"]["value"] for o in ours["openings"])
-        for k, (g, theirs) in enumerate(zip(gt.get("openings", []), measured.get("openings", []))):
-            mine = min(ours_openings, key=lambda w: abs(w - g["width"])) if ours_openings else np.nan
-            rows.append((room_id, f"opening {k}", g["width"], theirs, mine))
+        if "floor_area" in measured:
+            rows.append((room_id, "floor area", gt["floor_area"], measured["floor_area"],
+                         ours["floor_area"]["value"]))
+        theirs_openings = list(measured.get("openings", []))
+        for k, g in enumerate(gt.get("openings", [])):
+            same_type = [o["width"]["value"] for o in ours["openings"] if o["type"] == g["type"]]
+            mine = min(same_type, key=lambda w: abs(w - g["width"])) if same_type else np.nan
+            theirs = theirs_openings[k] if k < len(theirs_openings) else np.nan
+            rows.append((room_id, f"{g['type']} {k}", g["width"], theirs, mine))
     table, outcomes = [], []
     for room_id, quantity, true_value, theirs, mine in rows:
         e_app, e_ours = abs(theirs - true_value), abs(mine - true_value)
-        outcome = "tie" if abs(e_app - e_ours) <= TIE_M else ("win" if e_ours < e_app else "loss")
-        if not np.isfinite(e_ours):
+        tie = TIE_M2 if quantity == "floor area" else TIE_M
+        if not np.isfinite(e_app) and not np.isfinite(e_ours):
+            outcome = "tie"
+        elif not np.isfinite(e_ours):
             outcome = "loss"
+        elif not np.isfinite(e_app):
+            outcome = "win"
+        else:
+            outcome = "tie" if abs(e_app - e_ours) <= tie else ("win" if e_ours < e_app else "loss")
         outcomes.append(outcome)
         table.append({"room": room_id, "quantity": quantity, "truth": true_value, "app": theirs, "ours": mine,
                       "app_error_cm": round(100 * e_app, 2), "our_error_cm": round(100 * e_ours, 2), "outcome": outcome})
@@ -77,8 +93,10 @@ def main() -> int:
     print(f"{result['app']}: {result['beat_or_tie']:.0%} of {result['quantities']} quantities beaten or tied "
           f"(target {TARGET_SHARE:.0%}) -> {'PASS' if result['pass'] else 'FAIL'}")
     for row in result["rows"]:
-        print(f"  {row['room']:10s} {row['quantity']:10s} truth {row['truth']:.3f}  app {row['app_error_cm']:6.2f} cm"
-              f"  ours {row['our_error_cm']:6.2f} cm  {row['outcome']}")
+        unit = "m2" if row["quantity"] == "floor area" else "cm"
+        scale = 0.01 if unit == "m2" else 1.0
+        print(f"  {row['room']:10s} {row['quantity']:10s} truth {row['truth']:.3f}  "
+              f"app {scale * row['app_error_cm']:6.2f} {unit}  ours {scale * row['our_error_cm']:6.2f} {unit}  {row['outcome']}")
     return 0
 
 
