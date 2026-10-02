@@ -123,7 +123,7 @@ def run_lidar(bundle: CaptureBundle, options: LidarOptions | None = None) -> Lid
     if options.drift_correction:
         found = None
         for round_index in range(options.plane_rounds):
-            layouts = {r.id: room_layout(r, plan_cloud, options.tol) for r in regions}
+            layouts = {r.id: room_layout(r, plan_cloud, options.tol, absorb_slivers=False) for r in regions}
             layouts = {k: v for k, v in layouts.items() if v is not None}
             if round_index > 0:
                 # From the second round on, door and window jambs join the landmarks.

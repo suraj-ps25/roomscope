@@ -194,7 +194,10 @@ def _level(values: np.ndarray) -> tuple[float, float]:
     return level, float(spread / np.sqrt(min(len(near), EFFECTIVE_POINTS_CAP)) if len(near) else 0.02)
 
 
-def room_layout(region: RoomRegion, cloud: Cloud, tol: Tolerances = LIDAR_TOL) -> RoomLayout | None:
+def room_layout(region: RoomRegion, cloud: Cloud, tol: Tolerances = LIDAR_TOL,
+                absorb_slivers: bool = True) -> RoomLayout | None:
+    """absorb_slivers=False for layouts used as pose-adjustment landmarks: every wall the
+    fit found is evidence there; slivers are dropped only from the layout that is reported."""
     notes: list[str] = []
     near_room = region.contains(cloud.points[:, :2], dilate_cells=int(tol.wall_search_m / region.cell) + 2)
     points = cloud.subset(near_room)
@@ -268,6 +271,9 @@ def room_layout(region: RoomRegion, cloud: Cloud, tol: Tolerances = LIDAR_TOL) -
         notes.append(f"dropped an edge with {coverage[worst]:.0%} wall coverage under the ceiling (mask artefact)")
         lines.pop(worst)
 
+    if absorb_slivers:
+        lines, sliver_notes = _absorb_slivers(lines, region.area)
+        notes += sliver_notes
     polygon = _corners(lines)
     if polygon is None or len(polygon) < 3 or not _plausible(polygon, region.area):
         # Never ship a self-intersecting or implausible room: fall back to the free-space
@@ -278,6 +284,56 @@ def room_layout(region: RoomRegion, cloud: Cloud, tol: Tolerances = LIDAR_TOL) -
         notes.append("wall fit implausible; layout taken from the free-space outline (wide intervals)")
     # Vertex k is the start of wall k (intersection of wall k-1 and wall k).
     return RoomLayout(region.id, polygon, lines, floor_z, ceiling_z, floor_sigma, ceiling_sigma, points, notes)
+
+
+SLIVER_M = 0.3
+SLIVER_STEP_M = 0.05
+
+
+def _absorb_slivers(lines: list[WallLine], mask_area: float) -> tuple[list[WallLine], list[str]]:
+    """Walls shorter than SLIVER_M between two longer ones are not walls a person would
+    measure: a corner the fit cut off, or a step of a few centimetres between two faces of
+    one wall. Whether a capture keeps one decides the room's whole wall sequence, so two
+    captures of a room disagree on every wall after it. A sliver between two nearly parallel
+    walls merges them into one line (weighted by their points); one between two walls that
+    meet is dropped and they meet directly. A sliver between parallel walls more than
+    SLIVER_STEP_M apart is a real step (a pier, a reveal) and stays. Only while the room
+    stays closed and plausible."""
+    notes = []
+    while len(lines) > 3:
+        polygon = _corners(lines)
+        if polygon is None:
+            break
+        n = len(lines)
+        lengths = [float(np.linalg.norm(polygon[(k + 1) % n] - polygon[k])) for k in range(n)]
+        order = [k for k in np.argsort(lengths) if lengths[k] < SLIVER_M]
+        changed = False
+        for k in order:
+            before, after = lines[(k - 1) % n], lines[(k + 1) % n]
+            parallel = before.normal @ after.normal > 0.97
+            if parallel and abs(before.offset - after.offset) > SLIVER_STEP_M:
+                continue   # a real step in the wall (a pier, a reveal): keep the jog
+            if parallel:
+                weight = max(before.points, 1) + max(after.points, 1)
+                normal = before.normal * max(before.points, 1) + after.normal * max(after.points, 1)
+                normal /= np.linalg.norm(normal)
+                offset = (before.offset * max(before.points, 1) + after.offset * max(after.points, 1)) / weight
+                merged = WallLine(normal, float(offset), max(before.sigma, after.sigma, abs(before.offset - after.offset) / 2),
+                                  before.points + after.points, max(before.spread, after.spread))
+                keep = [l for j, l in enumerate(lines) if j not in (k, (k - 1) % n, (k + 1) % n)]
+                insert = min((k - 1) % n, k, (k + 1) % n)
+                candidate = keep[:insert] + [merged] + keep[insert:] if (k - 1) % n < (k + 1) % n else [merged] + keep
+            else:
+                candidate = lines[:k] + lines[k + 1:]
+            corners = _corners(candidate)
+            if corners is not None and len(corners) >= 3 and _plausible(corners, mask_area):
+                notes.append(f"absorbed a {lengths[k]:.2f} m sliver wall into its neighbours")
+                lines = candidate
+                changed = True
+                break
+        if not changed:
+            break
+    return lines, notes
 
 
 FALLBACK_SIGMA_M = 0.05
