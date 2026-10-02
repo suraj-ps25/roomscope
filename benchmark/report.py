@@ -225,7 +225,7 @@ def samples_section(bench: Path) -> list[str]:
     for path in plans:
         plan = json.loads(path.read_text())
         timing = plan.get("timing_s", {})
-        unseen = sum(any("ceiling not observed" in n for n in r["quality"]["notes"]) for r in plan["rooms"])
+        unseen = sum(any("ceiling not observed" in n for n in r.get("quality", {}).get("notes", [])) for r in plan["rooms"])
         rows.append({"sample": path.parent.name, "recording (s)": f"{plan['capture'].get('frames_used', 0) / 6:.0f}",
                      "rooms": len(plan["rooms"]), "connections": len(plan["adjacency"]),
                      "footprint (m²)": f"{plan['property']['footprint_area']['value']:.1f}",
