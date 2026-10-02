@@ -73,12 +73,15 @@ VIDEO = TierProfile("video", 0.02, "multi-view reconstruction, metric depth prio
 PHOTO = TierProfile("photo", 0.04, "sparse-view reconstruction, metric depth prior")
 
 
-def load_calibration(tier: str) -> tuple[dict[str, float], str | None]:
+def load_calibration(tier: str) -> tuple[dict[str, float], dict[str, float], str | None]:
+    """Per quantity: the conformal multiplier, and the absolute floor added in quadrature to
+    the propagated sigma before it (a plane fit's millimetres can't describe a wall placed
+    in the wrong spot)."""
     path = CALIBRATION_DIR / f"{tier}.json"
     if not path.exists():
-        return {}, None
+        return {}, {}, None
     table = json.loads(path.read_text())
-    return table["multipliers"], table.get("id")
+    return table["multipliers"], table.get("floors_m", {}), table.get("id")
 
 
 def _polygon_from_lines(normals: np.ndarray, offsets: np.ndarray) -> np.ndarray:
@@ -112,14 +115,15 @@ def _propagate(room: RoomGeometry, fn) -> float:
 
 
 class _Sigma:
-    def __init__(self, profile: TierProfile, multipliers: dict[str, float]):
+    def __init__(self, profile: TierProfile, multipliers: dict[str, float], floors: dict[str, float] | None = None):
         self.profile = profile
         self.multipliers = multipliers
+        self.floors = floors or {}
 
     def measurement(self, quantity: str, value: float, sigma_local: float, unit: str = "m",
                     scale_power: int = 1) -> Measurement:
         scale = self.profile.scale_sigma * scale_power * abs(value)
-        sigma = np.hypot(sigma_local, scale) * self.multipliers.get(quantity, 1.0)
+        sigma = np.hypot(np.hypot(sigma_local, scale), self.floors.get(quantity, 0.0)) * self.multipliers.get(quantity, 1.0)
         return Measurement.from_sigma(float(value), float(sigma), unit, self.profile.method)
 
 
@@ -147,7 +151,7 @@ def build_room(room: RoomGeometry, sigma: _Sigma) -> tuple[model.Room, list[mode
 
     if room.scale_sigma is not None:
         # Photo rooms carry their own scale uncertainty (it depends on how many photos).
-        sigma = _Sigma(replace(sigma.profile, scale_sigma=room.scale_sigma), sigma.multipliers)
+        sigma = _Sigma(replace(sigma.profile, scale_sigma=room.scale_sigma), sigma.multipliers, sigma.floors)
 
     polygon = room.polygon
     lengths = _lengths(polygon)
@@ -205,8 +209,8 @@ def build_plan(capture_id: str, profile: TierProfile, rooms: list[RoomGeometry],
                source_app: str | None = None, frames_used: int | None = None,
                capture_notes: list[str] | None = None,
                extra_adjacency: list[tuple[str, str]] | None = None) -> model.Plan:
-    multipliers, table_id = load_calibration(profile.tier)
-    sigma = _Sigma(profile, multipliers)
+    multipliers, floors, table_id = load_calibration(profile.tier)
+    sigma = _Sigma(profile, multipliers, floors)
     results = [build_room(room, sigma) for room in rooms]
     built = [room for room, _ in results]
     scope = [item for _, items in results for item in items]
