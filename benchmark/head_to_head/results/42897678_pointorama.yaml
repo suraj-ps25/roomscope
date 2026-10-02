@@ -5,10 +5,10 @@ rooms:
     - 4.3929
     - 2.8535
     - 0.0
-    - 0.3068
     - 0.0
+    - 0.9258
     - 4.8349
-    outline_edges: 27
-    floor_area: 20.7089
+    outline_edges: 18
+    floor_area: 21.0942
     openings: []
     ceiling_height: 2.3289

@@ -3,6 +3,6 @@ Pointorama web app, automatic Auto Floor + Magic Room, 2026-10-02: 86% of 7 quan
   large_room wall 1     truth 3.530  app  67.67 cm  ours   2.99 cm  win
   large_room wall 5     truth 4.811  app   2.42 cm  ours   0.39 cm  win
   large_room ceiling    truth 2.338  app   0.87 cm  ours   0.43 cm  tie
-  large_room floor area truth 18.501  app   2.21 m2  ours   0.21 m2  win
+  large_room floor area truth 18.501  app   2.59 m2  ours   0.21 m2  win
   large_room window 0   truth 1.450  app    nan cm  ours   1.00 cm  win
   large_room door 1     truth 0.720  app    nan cm  ours   5.42 cm  win
