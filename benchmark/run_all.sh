@@ -67,6 +67,9 @@ for capture in data/sample/*/*/; do
   [[ -f $OUT/samples_nodrift/$name/plan.json ]] || $RS run "$capture" --out "$OUT/samples_nodrift/$name" --no-drift-correction > /dev/null
 done
 
+echo "== live timing (photo and video with the model-output cache off)"
+[[ -f $OUT/timing_live.json ]] || $PY benchmark/time_live.py --out "$OUT/timing_live.json"
+
 echo "== interval calibration (split conformal, leave-one-property-out coverage)"
 lidar_runs=(); for s in 0 1 2; do lidar_runs+=("$OUT/lidar/flat_a_lidar_d1_s${s}_corrected/plan.json:data/captures/simbench/flat_a_lidar_d1_s$s/ground_truth.json"); done
 # Real recordings calibrate only from the dev visits; the held-out visits never do.
