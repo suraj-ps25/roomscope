@@ -139,18 +139,31 @@ def calibrate(runs: list[tuple[dict, dict]], tier: str, applied: dict[str, float
     }
 
 
-def run(tier: str, specs: list[str], out: str | None) -> dict:
+def run(tier: str, specs: list[str], out: str | None, max_views: int | None = None) -> dict:
+    """With max_views, only rooms reconstructed from at most that many photos are used, and
+    the table is the few-photos one (calibration/<tier>_few_views.json)."""
     runs, applied, groups = [], None, []
     for spec in specs:
         plan_path, truth_path = spec.split(":", 1)
-        runs.append((json.loads(Path(plan_path).read_text()), load_ground_truth(truth_path)))
+        plan = json.loads(Path(plan_path).read_text())
+        if max_views is not None:
+            plan["rooms"] = [r for r in plan["rooms"] if r.get("quality", {}).get("views", max_views + 1) <= max_views]
+            if not plan["rooms"]:
+                continue
+        runs.append((plan, load_ground_truth(truth_path)))
         groups.append(str(Path(truth_path).resolve()))
-    existing = Path(__file__).resolve().parents[3] / "calibration" / f"{tier}.json"
+    calibration_dir = Path(__file__).resolve().parents[3] / "calibration"
+    existing = calibration_dir / f"{tier}.json"
+    if max_views is not None and (calibration_dir / f"{tier}_few_views.json").exists():
+        existing = calibration_dir / f"{tier}_few_views.json"
     applied_floors = None
     if existing.exists():
         shipped = json.loads(existing.read_text())
         applied, applied_floors = shipped["multipliers"], shipped.get("floors_m", {})
     table = calibrate(runs, tier, applied, groups, applied_floors)
+    if max_views is not None:
+        table["id"] = f"{tier}-few-views-conformal-{len(runs)}captures"
+        table["max_views"] = max_views
     if out:
         Path(out).parent.mkdir(parents=True, exist_ok=True)
         Path(out).write_text(json.dumps(table, indent=2))
