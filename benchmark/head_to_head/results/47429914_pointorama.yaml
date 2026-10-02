@@ -1,0 +1,12 @@
+app: Pointorama web app, automatic Auto Floor + Magic Room, 2026-10-02
+rooms:
+  bathroom:
+    walls:
+    - 1.8035
+    - 1.9515
+    - 2.5673
+    - 1.2096
+    outline_edges: 13
+    floor_area: 5.6819
+    openings: []
+    ceiling_height: 2.4955
