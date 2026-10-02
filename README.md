@@ -105,8 +105,9 @@ This covers the brief's gates: opening widths ≤ 2 cm on ≥ 85% (missed and ph
 openings count against), ceiling ≤ 1.5 cm, walls ±3% (video) and ±8% (photo),
 repeatability, adjacency, overlaps, footprint and interval coverage. Laser truth for a
 real recording is surveyed with `benchmark/real/laser_truth.py` (overlays in
-[`docs/real/`](docs/real)). Your own iPhone captures with tape or laser truth, and the
-head-to-head against magicplan, follow [`benchmark/README.md`](benchmark/README.md) and
+[`docs/real/`](docs/real)). Your own iPhone captures with tape or laser truth follow
+[`benchmark/README.md`](benchmark/README.md). The head-to-head (a recording's raw cloud
+through Pointorama's automatic room tools, and magicplan on a phone when there is one) is in
 [`benchmark/head_to_head/`](benchmark/head_to_head/README.md).
 
 How failing numbers became fixes, each regenerable from its two commits:
