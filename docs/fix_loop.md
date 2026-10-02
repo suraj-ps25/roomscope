@@ -340,6 +340,28 @@ recording's ~1° skew in the iPad depth itself.
 **Not done:** refining door and window edges from the colour images, the second
 planned step, was dropped to finish on time. Opening widths stay ±3–7 cm.
 
+### real-interval-floor: real LiDAR intervals far too narrow (declared before the code, `HEAD` at declaration)
+
+- **Symptom:** "confident garbage". On the held-out visit (422009) LiDAR wall intervals
+  cover the truth on 29% of walls (median 20% per recording) against a 90% target, with
+  walls up to 61 cm off; on dev, 76%.
+- **Isolation:** the propagated wall sigmas are plane-fit numbers, millimetres, while real
+  errors are centimetres to decimetres from walls placed in the wrong spot. A multiplier
+  on a millimetre sigma cannot reach them: dev alone would need ×27 at the shipped table's
+  form. The shipped table is also pooled with synthetic captures, whose errors are tiny,
+  which pulls the multiplier down for real ones. Splitting by room size does not help
+  (normal-sized dev rooms need wider intervals than small ones).
+- **Fix:** each quantity gets an absolute floor added in quadrature, σ′ = √(σ² + τ²),
+  before the split-conformal multiplier; τ is chosen per quantity from a small grid as the
+  narrowest that keeps leave-one-visit-out coverage ≥ 90% on dev. The LiDAR table is
+  fitted on real dev recordings only.
+- **Predicted** (from the same recordings, before code): walls τ ≈ 3 cm, multiplier ≈ 4.3;
+  dev leave-one-visit-out coverage ≈ 94%; held-out wall coverage 29% → ≈ 65%, median
+  wall half-width ≈ 22 cm; ceilings τ ≈ 1 cm, held-out coverage ≈ 86% at ≈ 2.7 cm
+  half-width. It will not reach 90% held out: one held-out wall's truth is 33 cm off (an
+  object in front of the wall was surveyed as the wall; `fix_declaration.md` §4 has the
+  method for checking it), and one held-out room's shape is wrong in our plan.
+
 ### Earlier fixes (in the history, found the same way)
 
 These predate the regeneration script, so their before/after is recorded in the commit
