@@ -201,12 +201,13 @@ were **held out**, chosen by rule before being looked at.
     wide interval. The flat comes out as 8 rooms either way.
   - Decoding the video took 39 of 43 minutes on a 3.5-minute scan. One sequential decode
     makes the whole run 5.4 minutes, cold.
-- **Head-to-head without a phone.** Consumer scanning apps only take a live scan, so the
-  bathroom's raw LiDAR (iPad poses, no correction of ours) went as a point cloud into
-  Pointorama's automatic room tools, unedited. Against the laser, we beat or tie 8 of 8
-  quantities (7 of 8 with our depth calibration off, on identical input): its outline
-  stepped through the doorway (wall errors 3–92 cm against our 0.5–3.8 cm), and it
-  reported no openings (`benchmark/head_to_head/`).
+- **Head-to-head without a phone.** Consumer scanning apps only take a live scan, so two
+  rooms' raw LiDAR (iPad poses, no correction of ours) went as point clouds into
+  Pointorama's automatic room tools, unedited. Against the laser we beat or tie 14 of 15
+  quantities as shipped. Its outlines step out past walls (13 edges for a 4-wall room),
+  inflating areas 8–14% and finding no openings, but a wall it draws cleanly is as good as
+  ours (0.8 cm). With our depth calibration off, on identical input, we beat or tie 10 of
+  15, under the 70% bar (`benchmark/head_to_head/`).
 
 The full tables are in [`benchmark_report.md`](benchmark_report.md).
 
