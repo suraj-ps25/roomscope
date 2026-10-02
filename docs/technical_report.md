@@ -132,7 +132,7 @@ rooms come out as their bounding rectangle, a stated limitation.
 
 | tier | dominant error | measured size | how it is handled | wall multiplier, held-out coverage |
 |---|---|---|---|---|
-| LiDAR | depth scale of the device | −0.88% (iPad Pro) | per-device scale ×1.0088 (§8) | ×4.23; 71% median on dev, 20% on the held-out visit |
+| LiDAR | depth scale of the device | −0.88% (iPad Pro) | per-device scale ×1.0088 (§8) | 8 cm floor, ×1.63; 94% dev (left-out), 60% held-out |
 | LiDAR | VIO drift | 1%/m + 2 mm budget | pose graph + plane-anchored adjustment (§3) | (in the above) |
 | LiDAR | jamb edges at 256×192 | ±3–7 cm on openings | density-mode reveal fit | openings ×2.04 |
 | video | depth model's per-scene scale | sd 5.9%, −14% to +4% | carried in the interval, not removable by averaging | ×8.34; 88% |
@@ -203,7 +203,7 @@ same rule is the held-out set.
   whose laser survey is thin (one scanner station; the plan placed with 56% of wall
   samples within 5 cm). Ceilings hold: 6 of 7 within 1.5 cm. Walls do not: each
   recording's worst wall a median 38 cm off, all 8 reported openings phantom, interval
-  coverage 20%. Recordings of one room disagree on its wall count, so short walls and
+  coverage 20%, raised to 60% by an absolute error floor in the calibration (§9). Recordings of one room disagree on its wall count, so short walls and
   cut corners in rooms this small are what the pipeline gets wrong; how much of the 38 cm
   is the thin survey is not separated.
 - **Photo and video on the same rooms.** Fed the recordings' own colour frames, the image
@@ -235,6 +235,10 @@ followed by a re-run of every tier it touched. That re-run caught three regressi
 video fix that cost LiDAR openings, a square-room prior that cost a synthetic window, and
 the declared fix's first version, which lost a door.
 
+A later declared fix put an absolute floor under every interval (σ′ = √(σ² + τ²)) and fitted
+real LiDAR on real dev recordings only: held-out coverage 20% → 60%, dev 94%, at a median
+wall half-width of 21.5 cm (predicted 65% held-out; the miss is explained in `fix_loop.md`).
+
 The fix the brief scores is **declared in advance**
 ([`fix_declaration.md`](fix_declaration.md)).
 - **The worst gate:** real openings, 2 of 29 within 2 cm.
@@ -246,8 +250,8 @@ The fix the brief scores is **declared in advance**
 - **The gate still fails:** widths stay ±5 cm at 256×192 depth, and some doors were never
   filmed.
 
-A second fix, the depth-scale calibration, did better than expected (above). Fifteen
-entries regenerate from their two commits on an identical capture with one scorer
+A second fix, the depth-scale calibration, did better than expected (above). Each shipped
+entry regenerates from their two commits on an identical capture with one scorer
 (`benchmark/fix_loop/`).
 
 ## 10. Limitations and next steps
