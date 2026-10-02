@@ -63,6 +63,8 @@ echo "== assessors' sample captures (data/sample/, no ground truth: structure an
 for capture in data/sample/*/*/; do
   name=$(basename "$(dirname "$capture")")
   [[ -f $OUT/samples/$name/plan.json ]] || $RS run "$capture" --out "$OUT/samples/$name" > /dev/null
+  # The drift ablation on real multi-room captures: the same recording with drift correction off.
+  [[ -f $OUT/samples_nodrift/$name/plan.json ]] || $RS run "$capture" --out "$OUT/samples_nodrift/$name" --no-drift-correction > /dev/null
 done
 
 echo "== interval calibration (split conformal, leave-one-property-out coverage)"
