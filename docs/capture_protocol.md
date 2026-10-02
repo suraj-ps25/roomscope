@@ -56,5 +56,6 @@ About **1 minute per room**.
 
 Mirrors, glass, shiny floors and dim rooms need nothing special.
 
-Then: `roomscope run <recording folder | video file | folder of room folders> --out runs/<name>`.
+Then, on the Mac: double-click **RoomScope.command**, drop the folder (or video) on the page that
+opens, press **Make the floor plan**. (Or: `roomscope run <capture> --out runs/<name>`.)
 What happens in difficult cases: [`capture_notes.md`](capture_notes.md).

@@ -14,6 +14,13 @@ and `plan.png`. The output contains:
 
 ## Quick start
 
+**Without a terminal:** download the repo, double-click `RoomScope.command` in Finder (the
+first time it installs everything, about 5 minutes), and a page opens in the browser: drop
+the capture in, press *Make the floor plan*, and it shows the plan, every measurement with
+its interval, and `plan.json` to download. It runs on this computer only (`roomscope serve`).
+
+**With a terminal:**
+
 ```
 git clone https://github.com/suraj-ps25/roomscope.git && cd roomscope
 scripts/setup.sh --lidar      # LiDAR tier, no model weights
