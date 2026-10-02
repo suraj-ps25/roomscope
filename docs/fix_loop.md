@@ -298,6 +298,23 @@ bar for shipping was a spread under ~3.5%; nothing came close, so no code change
 photo and video wall gates remain bound by monocular metric scale. Depth Anything V2 ran
 at 0.2 s a view; Depth Pro at several seconds.
 
+### A fix that was not shipped: a ceiling-height scale prior for photo and video
+
+- **Symptom:** on real iPad frames one photo-tier bathroom came out 33% small, with a
+  1.91 m ceiling: a scale failure no home has.
+- **Idea:** fuse the depth model's scale (per-scene spread 5.9–6.7%) with a prior on
+  domestic ceiling height, each weighted by its uncertainty.
+- **Measured** on the eight scanned rooms, both tiers, before writing it into the pipeline:
+  the room's ceiling error does track its wall-scale error (log correlation 0.57), but the
+  gain is small and hangs on the prior's mean. Median wall-scale error 7.4% becomes 6.2%
+  with a 2.6 m ± 8% prior, 7.6% (worse) with 2.5 m ± 8%, 6.6–6.9% with wider priors.
+  The scanned rooms' ceilings (2.59–2.85 m) sit above the real recordings' (2.13–2.53 m),
+  so any one prior helps one set at the other's cost.
+- **Not shipped:** a gain that flips sign when the prior moves 10 cm is tuning, not a fix.
+  The same data rule out a global depth-scale correction too: the model reads 4–14% short
+  on rendered scenes and about 2% long on real iPad frames, with a 6.7% per-scene spread
+  that no global factor removes.
+
 ### real-sliver-walls: captures of one room disagreed on its wall sequence (`23cb877` → `7c2909e`)
 
 Developed on visits 423441, 438802 and 467326, which were held out until then and are
