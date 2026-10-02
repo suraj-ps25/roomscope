@@ -58,3 +58,22 @@ def test_ceiling_is_the_layer_over_most_of_the_room():
     cabinets = np.c_[rng.uniform(0, 1, 9000), rng.uniform(0, 0.3, 9000), 2.2 + rng.normal(0, 0.003, 9000)]
     level, _ = _ceiling_level(np.vstack([main, lowered, cabinets]))
     assert abs(level - 3.05) < 0.01
+
+
+def test_sliver_wall_between_collinear_faces_is_absorbed_but_a_real_step_stays():
+    from roomscope.geometry.layout import WallLine, _absorb_slivers, _corners
+
+    def line(normal, offset, points=1000):
+        n = np.array(normal, float); n /= np.linalg.norm(n)
+        return WallLine(n, offset, 0.001, points, 0.01)
+
+    # A 4 x 3 room whose bottom wall has a 2 cm step (y = 0 then y = 0.02) joined by a sliver.
+    stepped = [line([0, 1], 0.0), line([-1, 0], -2.0), line([0, 1], 0.02), line([-1, 0], -4.0),
+               line([0, -1], -3.0), line([1, 0], 0.0)]
+    absorbed, notes = _absorb_slivers(stepped, 12.0)
+    assert len(absorbed) == 4 and notes
+    # A 20 cm step (a pier) is a real jog and stays.
+    pier = [line([0, 1], 0.0), line([-1, 0], -2.0), line([0, 1], 0.2), line([-1, 0], -2.2),
+            line([0, -1], -3.0), line([1, 0], 0.0)]
+    kept, _ = _absorb_slivers(pier, 12.0)
+    assert len(kept) == len(pier) and _corners(kept) is not None
