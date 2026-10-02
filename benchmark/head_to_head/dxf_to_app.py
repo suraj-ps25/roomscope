@@ -5,9 +5,12 @@
 
 The tool's outline and our plan sit in one frame (both come from the recording's ARKit
 world), so each ground-truth wall is identified by our plan's matching wall line. A wall's
-app length is the summed length of the outline edges parallel to that line (within
-MAX_ANGLE_DEG) and lying on it (within MAX_OFFSET_M): a wall the tool broke into steps
-gets credit for every piece, which is the reading most favourable to the tool. The
+app length is how far the tool's wall runs along that line: the extent, end to end, of
+the outline edges parallel to it (within MAX_ANGLE_DEG), near it (within MAX_OFFSET_M) and
+mostly alongside it (at least MIN_OVERLAP of the edge projects inside the wall's span). A
+wall the tool broke into steps is read as one wall from its first piece to its last. The offset
+allowance is wide because the tool saw the raw cloud, whose drift we correct and it can't:
+in the large room its walls sit up to 0.5 m from ours. The
 outline's own area and edge count are recorded alongside.
 """
 
@@ -24,10 +27,11 @@ import yaml
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
-from roomscope.benchmark.evaluate import _cyclic_alignment, load_ground_truth  # noqa: E402
+from roomscope.benchmark.evaluate import _cyclic_alignment, load_ground_truth, match_rooms  # noqa: E402
 
 MAX_ANGLE_DEG = 10.0
-MAX_OFFSET_M = 0.25
+MAX_OFFSET_M = 0.6
+MIN_OVERLAP = 0.5
 
 
 def read_outline(dxf: Path) -> np.ndarray:
@@ -50,17 +54,20 @@ def shoelace(polygon: np.ndarray) -> float:
 
 
 def matched_length(outline: np.ndarray, start: np.ndarray, end: np.ndarray) -> float:
-    direction = (end - start) / np.linalg.norm(end - start)
+    span = float(np.linalg.norm(end - start))
+    direction = (end - start) / span
     normal = np.array([-direction[1], direction[0]])
-    total = 0.0
+    ends: list[float] = []
     for a, b in zip(outline, np.roll(outline, -1, axis=0)):
         edge = b - a
         length = float(np.linalg.norm(edge))
         angle = np.degrees(np.arccos(min(1.0, abs(float(edge @ direction)) / length)))
         offset = abs(float(((a + b) / 2 - start) @ normal))
-        if angle <= MAX_ANGLE_DEG and offset <= MAX_OFFSET_M:
-            total += length
-    return total
+        along = sorted((float((a - start) @ direction), float((b - start) @ direction)))
+        inside = max(0.0, min(along[1], span) - max(along[0], 0.0)) / max(along[1] - along[0], 1e-9)
+        if angle <= MAX_ANGLE_DEG and offset <= MAX_OFFSET_M and inside >= MIN_OVERLAP:
+            ends += along
+    return max(ends) - min(ends) if ends else 0.0
 
 
 def main() -> int:
@@ -75,8 +82,9 @@ def main() -> int:
     args = parser.parse_args()
 
     outline = read_outline(Path(args.dxf))
-    room = json.loads(Path(args.plan).read_text())["rooms"][0]
-    truth = next(r for r in load_ground_truth(args.truth)["rooms"] if r["id"] == args.room)
+    truth_plan = load_ground_truth(args.truth)
+    room, truth = next((p, t) for p, t in match_rooms(json.loads(Path(args.plan).read_text()), truth_plan)
+                       if t["id"] == args.room)
     ours = [w["length"]["value"] for w in room["walls"]]
     shift = _cyclic_alignment(ours, truth["walls"], [], [])
     walls = []
