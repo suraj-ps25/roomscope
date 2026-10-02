@@ -97,4 +97,8 @@ rooms:
 adjacency: []
 note: 'fresh held-out visit (fetched after the sliver fix, run once); one laser station
   with thin coverage of these two small rooms: walls without a laser face are not
-  scored'
+  scored. Known defect, left in place: room_b wall 1 was surveyed on an object standing
+  in front of the wall (dense at tape height, absent under the ceiling), 0.33 m inside
+  the wall face; the wall itself is seen floor to ceiling only along its first 0.4 m.
+  Not corrected, because correcting a ruler after seeing the scores needs its own
+  declaration.'
