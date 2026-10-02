@@ -11,7 +11,8 @@ mostly alongside it (at least MIN_OVERLAP of the edge projects inside the wall's
 wall the tool broke into steps is read as one wall from its first piece to its last. The offset
 allowance is wide because the tool saw the raw cloud, whose drift we correct and it can't:
 in the large room its walls sit up to 0.5 m from ours. The
-outline's own area and edge count are recorded alongside.
+outline's own area and edge count are recorded alongside. When the tool drew several rooms,
+the one sharing the most floor with our matched room is used.
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ from pathlib import Path
 
 import numpy as np
 import yaml
+from matplotlib.path import Path as MplPath
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
@@ -34,18 +36,32 @@ MAX_OFFSET_M = 0.6
 MIN_OVERLAP = 0.5
 
 
-def read_outline(dxf: Path) -> np.ndarray:
+def read_outlines(dxf: Path) -> list[np.ndarray]:
+    """One array of (x, y) vertices per POLYLINE, i.e. per room the tool drew."""
     lines = [line.strip() for line in dxf.read_text().splitlines()]
     pairs = list(zip(lines[0::2], lines[1::2]))
-    vertices, current = [], None
+    outlines: list[list] = []
+    vertex = None
     for code, value in pairs:
         if code == "0":
-            if current is not None and len(current) == 2:
-                vertices.append(current)
-            current = [] if value == "VERTEX" else None
-        elif current is not None and code in ("10", "20"):
-            current.append(float(value))
-    return np.array(vertices)
+            if vertex is not None and len(vertex) == 2:
+                outlines[-1].append(vertex)
+            vertex = None
+            if value == "POLYLINE":
+                outlines.append([])
+            elif value == "VERTEX" and outlines:
+                vertex = []
+        elif vertex is not None and code in ("10", "20"):
+            vertex.append(float(value))
+    return [np.array(outline) for outline in outlines if len(outline) >= 3]
+
+
+def shared_area(outline: np.ndarray, polygon: np.ndarray, cell_m: float = 0.05) -> float:
+    low, high = polygon.min(axis=0), polygon.max(axis=0)
+    xs, ys = np.meshgrid(np.arange(low[0], high[0], cell_m), np.arange(low[1], high[1], cell_m))
+    cells = np.column_stack([xs.ravel(), ys.ravel()])
+    inside = MplPath(polygon).contains_points(cells) & MplPath(outline).contains_points(cells)
+    return float(inside.sum()) * cell_m ** 2
 
 
 def shoelace(polygon: np.ndarray) -> float:
@@ -81,10 +97,11 @@ def main() -> int:
     parser.add_argument("--out", required=True)
     args = parser.parse_args()
 
-    outline = read_outline(Path(args.dxf))
     truth_plan = load_ground_truth(args.truth)
     room, truth = next((p, t) for p, t in match_rooms(json.loads(Path(args.plan).read_text()), truth_plan)
                        if t["id"] == args.room)
+    ours_polygon = np.array(room["polygon"])
+    outline = max(read_outlines(Path(args.dxf)), key=lambda o: shared_area(o, ours_polygon))
     ours = [w["length"]["value"] for w in room["walls"]]
     shift = _cyclic_alignment(ours, truth["walls"], [], [])
     walls = []
