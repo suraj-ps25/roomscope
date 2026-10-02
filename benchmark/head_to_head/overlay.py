@@ -14,7 +14,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from dxf_to_app import read_outline  # noqa: E402
+from dxf_to_app import read_outlines  # noqa: E402
 
 PLY_VERTEX = [("x", "<f4"), ("y", "<f4"), ("z", "<f4"), ("red", "u1"), ("green", "u1"), ("blue", "u1")]
 WALL_BAND_M = (0.9, 1.6)   # above the floor: walls, not furniture tops or ceiling
@@ -28,9 +28,9 @@ def main() -> int:
     band = (height > WALL_BAND_M[0]) & (height < WALL_BAND_M[1])
     fig, ax = plt.subplots(figsize=(7, 7))
     ax.scatter(points["x"][band], points["y"][band], s=0.1, c="0.6", label="raw LiDAR, wall band")
-    outline = read_outline(Path(dxf))
-    closed = np.vstack([outline, outline[:1]])
-    ax.plot(closed[:, 0], closed[:, 1], "-", c="tab:purple", lw=2, label=f"Pointorama ({len(outline)} edges)")
+    for k, outline in enumerate(read_outlines(Path(dxf))):
+        closed = np.vstack([outline, outline[:1]])
+        ax.plot(closed[:, 0], closed[:, 1], "-", c="tab:purple", lw=2, label="Pointorama" if k == 0 else None)
     for k, room in enumerate(json.loads(Path(plan).read_text())["rooms"]):
         polygon = np.array(room["polygon"] + room["polygon"][:1])
         ax.plot(polygon[:, 0], polygon[:, 1], "-", c="tab:green", lw=2, label="roomscope LiDAR tier" if k == 0 else None)
