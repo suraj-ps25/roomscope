@@ -204,7 +204,30 @@ def real_section(bench: Path) -> list[str]:
                      f"ceiling within 1.5 cm on {sum(c <= 0.015 for c in ceilings)}/{len(ceilings)}; openings within 2 cm "
                      f"{opening_pass}/{opening_all}; interval coverage median {_pct(float(np.median(covered)), 0)}"
                      + (" (in-sample: these runs fitted the calibration)" if split == "dev" and tier == "lidar" else "") + ".")
-    lines += ["", "Repeatability (recordings of the same room): walls agreeing within 1 cm or 0.5%.", ""]
+    lines += ["", "Ceiling across captures of the same room (LiDAR): the brief's gate is within 1.5 cm in each, spread",
+              "within 1 cm across them, and asks which failure a miss is.", ""]
+    by_room: dict[tuple[str, str], list[float]] = {}
+    for run in summary["runs"]:
+        metrics = run.get("metrics")
+        if not metrics or run.get("tier", "lidar") != "lidar":
+            continue
+        for room in metrics["per_room"]:
+            by_room.setdefault((run["visit"], room["truth"]), []).append(room["ceiling_error_m"])
+    rows = []
+    for (visit, room), errors in sorted(by_room.items()):
+        if len(errors) < 2:
+            continue
+        spread = max(errors) - min(errors)
+        biased = any(abs(e) > 0.015 for e in errors)
+        verdict = ("unrepeatable" if spread > 0.01 else "repeatable but biased" if biased else "passes")
+        rows.append({"visit / room": f"{visit} / {room}", "captures": len(errors),
+                     "errors (cm)": " ".join(f"{100 * e:+.1f}" for e in errors),
+                     "spread (cm)": f"{100 * spread:.1f}", "mean (cm)": f"{100 * float(np.mean(errors)):+.1f}",
+                     "verdict": verdict})
+    lines += _table(rows, "visit / room") + [""]
+    lines += ["Before the device depth-scale calibration (`docs/fix_loop.md`, real-ceiling-scale) every real ceiling read",
+              "low, by about 0.9%: repeatable but biased, the bias being the iPad's depth scale.", ""]
+    lines += ["Repeatability (recordings of the same room): walls agreeing within 1 cm or 0.5%.", ""]
     rows = []
     for pair in summary["repeatability"]:
         scored = [w for w in pair["walls"] if "pass" in w]
