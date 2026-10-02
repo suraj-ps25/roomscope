@@ -260,8 +260,10 @@ entries regenerate from their two commits on an identical capture with one score
 - **Our own captures.** The head-to-head ran on an uploaded cloud in a professional tool,
   not a consumer app's own scan on the same phone. The photo and video tiers have no
   on-protocol real capture with laser truth.
-- **Monocular scale.** The video ±3% gate is not met. The next lever is a door-height prior
-  (interior doors are ~2.03 m, σ ≈ 2%).
+- **Monocular scale.** The video ±3% gate is not met. A door-height prior, a ceiling-height
+  prior and an ensemble of depth models were each measured and not shipped
+  (`fix_loop.md`): the depth model's scale varies by 6.7% from scene to scene on real
+  iPad frames, and no global correction removes a per-scene spread.
 - **Photo/video layouts are rectangles.** L-shaped rooms read as their bounding rectangle.
 - **Damage** recall is validated on synthetic staging only (3/3 at the staged places).
   Real undamaged rooms still report 2–11 false regions.
