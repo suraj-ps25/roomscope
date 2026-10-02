@@ -1,23 +1,29 @@
 {
-  "id": "lidar-conformal-7captures",
+  "id": "lidar-conformal-11captures",
   "tier": "lidar",
   "level": 0.9,
   "multipliers": {
-    "wall_length": 4.234549940165199,
-    "ceiling_height": 2.104741449120687,
-    "opening_width": 2.0351318332510893,
-    "floor_area": 4.0220641318338775
+    "wall_length": 1.6270851682550074,
+    "ceiling_height": 1.3264325120243292,
+    "opening_width": 1.665457024990089,
+    "floor_area": 30.339202169736456
+  },
+  "floors_m": {
+    "wall_length": 0.08,
+    "ceiling_height": 0.01,
+    "opening_width": 0.02,
+    "floor_area": 0.0
   },
   "samples": {
-    "wall_length": 64,
-    "ceiling_height": 16,
-    "opening_width": 32,
-    "floor_area": 16
+    "wall_length": 47,
+    "ceiling_height": 14,
+    "opening_width": 13,
+    "floor_area": 14
   },
   "held_out_coverage": {
-    "wall_length": 0.828125,
-    "ceiling_height": 0.8125,
-    "floor_area": 0.875,
-    "opening_width": 0.875
+    "wall_length": 0.9361702127659575,
+    "ceiling_height": 0.9285714285714286,
+    "opening_width": 0.9230769230769231,
+    "floor_area": 0.9285714285714286
   }
 }
