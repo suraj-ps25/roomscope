@@ -94,8 +94,8 @@ This runs:
 - the depth model's metric scale on real iPad imagery;
 - the LiDAR tier on real iPad Pro recordings of real rooms (ARKitScenes), scored against
   laser-scanner truth, on dev visits and on held-out visits run once
-  (`python benchmark/real/fetch_arkitscenes.py 471428 471425 423441 438802 467326` first,
-  about 20 GB);
+  (`python benchmark/real/fetch_arkitscenes.py 471428 471425 423441 438802 467326 422009`
+  first, about 32 GB);
 - the assessors' three sample Stray Scanner captures, if unzipped into `data/sample/`
   (no truth comes with them: rooms, connections and run time only);
 - per-tier interval calibration.
