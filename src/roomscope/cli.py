@@ -53,7 +53,8 @@ def _run(args: argparse.Namespace) -> int:
         from .io.stray import read_stray
         from .tiers.lidar import LidarOptions, run_lidar
         bundle = read_arkitscenes(capture) if is_arkitscenes(capture) else read_stray(capture, cache_dir=out / "cache")
-        result = run_lidar(bundle, LidarOptions(drift_correction=not args.no_drift_correction))
+        result = run_lidar(bundle, LidarOptions(drift_correction=not args.no_drift_correction,
+                                                 depth_scale=args.depth_scale))
         plan = result.plan
     elif tier == "photo":
         from .tiers.photo import run_photo
@@ -94,6 +95,8 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--tier", choices=TIERS, help="force a tier (default: auto-detect)")
     run.add_argument("--no-drift-correction", action="store_true",
                      help="use capture poses as-is (ablation for the drift report)")
+    run.add_argument("--depth-scale", type=float,
+                     help="LiDAR only: fixed depth scale instead of the device calibration (1.0 = raw)")
     run.add_argument("--oracle-depth", action="store_true",
                      help="synthetic captures only: true depth instead of the depth model (ablation)")
     run.set_defaults(func=_run)
