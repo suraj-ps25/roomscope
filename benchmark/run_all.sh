@@ -38,6 +38,16 @@ for tier in photo video; do
   done
 done
 
+echo "== low light: the synthetic flat at every tier, underexposed (35%) with three times the sensor noise"
+for tier in lidar video photo; do
+  capture=data/captures/sim_flat_a_${tier}_lowlight
+  [[ -f $capture/ground_truth.json ]] || $RS sim benchmark/sim/flat_a.yaml --tier $tier --low-light --out $capture
+  if [[ ! -f $OUT/lowlight/$tier/metrics.json ]]; then
+    $RS run $capture --out "$OUT/lowlight/$tier" > /dev/null
+    $RS eval "$OUT/lowlight/$tier/plan.json" $capture/ground_truth.json --out "$OUT/lowlight/$tier/metrics.json" > /dev/null
+  fi
+done
+
 echo "== scanned rooms (Replica): photo and video, depth model and true depth"
 for room in room0 room1 room2 office0 office1 office2 office3 office4; do
   for tier in photo video; do

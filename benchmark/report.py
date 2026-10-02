@@ -84,6 +84,24 @@ def flat_section(bench: Path) -> list[str]:
     return lines + _table(rows, "run") + [""]
 
 
+def low_light_section(bench: Path) -> list[str]:
+    rows = []
+    normal = {"lidar": "flat_a_lidar_fullres", "video": "flat_a_video_model", "photo": "flat_a_photo_model"}
+    for tier, folder in normal.items():
+        for light, path in (("normal", bench / folder / "metrics.json"), ("low", bench / "lowlight" / tier / "metrics.json")):
+            metrics = _load(path)
+            if metrics:
+                damage = metrics.get("damage") or {}
+                found = f"{damage.get('found', 0)}/{damage.get('staged', 0)}, {damage.get('false_positives', 0)} false" if damage else "–"
+                rows.append({"run": f"{tier}, {light} light", **_gates(metrics), "damage found": found})
+    if not any(r["run"].endswith("low light") for r in rows):
+        return []
+    return ["## Low light", "",
+            "The synthetic flat captured again at every tier underexposed to 35% with three times the sensor noise",
+            "(`roomscope sim --low-light`), against the same flat in normal light. LiDAR depth doesn't depend on light;",
+            "the colour images do (damage, and the photo and video tiers' depth model).", ""] + _table(rows, "run") + [""]
+
+
 def replica_section(bench: Path) -> list[str]:
     summary = _load(bench / "replica" / "summary.json") or []
     lines = ["## Photo and video tiers on scanned rooms (Replica)", "",
@@ -280,6 +298,24 @@ def timing_section(bench: Path) -> list[str]:
     return lines
 
 
+def limitations_section() -> list[str]:
+    return ["## Known failure cases", "",
+            "What fails, as measured above; causes and what was tried are in `docs/technical_report.md` §10,",
+            "`docs/fix_declaration.md` §4 and `docs/fix_loop.md`.", "",
+            "- **Openings on real recordings** miss the 2 cm / 85% gate: windows ±3–6 cm at 256×192 depth, doors",
+            "  never filmed, plans whose wall count differs from the survey's.",
+            "- **Repeatability on real recordings** misses 1 cm / 0.5%: walls differ 1–5 cm between recordings of one room",
+            "  (the iPad's depth scale and skew vary between captures).",
+            "- **Photo ±8% and video ±3% walls** with the depth model: its scale varies 6.7% from scene to scene.",
+            "- **Very small rooms** (about 2 m², the held-out visit): wall placement errors of decimetres; intervals",
+            "  cover a median 60%, below 90%.",
+            "- **Photo input of 2–3 photos a room:** rooms come out unconnected and walls tens of cm off; such rooms",
+            "  get their own, wider interval table.",
+            "- **Captures that never film the ceiling:** furniture can be traced as walls (ragged outlines); the",
+            "  ceiling is a stated prior with a wide interval.",
+            "- **Damage on real undamaged rooms:** 2–11 false regions per recording.", ""]
+
+
 def samples_section(bench: Path) -> list[str]:
     plans = sorted((bench / "samples").glob("*/plan.json"))
     lines = ["## Assessors' sample captures", "",
@@ -377,8 +413,9 @@ def main() -> int:
     provenance = bench / "PROVENANCE.md"
     if provenance.exists():
         lines += provenance.read_text().strip().split("\n") + [""]
-    lines += (lidar_section(bench) + flat_section(bench) + replica_section(bench) + depth_section(bench)
-              + damage_section(bench) + real_section(bench) + head_to_head_section() + timing_section(bench) + samples_section(bench) + calibration_section(bench))
+    lines += (lidar_section(bench) + flat_section(bench) + low_light_section(bench) + replica_section(bench) + depth_section(bench)
+              + damage_section(bench) + real_section(bench) + head_to_head_section() + timing_section(bench) + samples_section(bench) + calibration_section(bench)
+              + limitations_section())
     Path(args.out).write_text("\n".join(lines) + "\n")
     print(f"wrote {args.out}")
     return 0
