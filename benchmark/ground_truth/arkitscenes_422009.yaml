@@ -1,0 +1,100 @@
+property: arkitscenes visit 422009
+source: laser scans in data/public/arkitscenes/laser/422009, plan placed with 56%
+  of wall samples within 5 cm
+rooms:
+- id: room_a
+  walls:
+  - 2.3042
+  - 1.0008
+  - 1.074
+  - 1.1217
+  - 1.7411
+  floor_area: 2.0033
+  ceiling_height:
+  - 2.2566
+  openings: []
+  survey:
+    wall_offsets_m:
+    - -0.0305
+    - -0.2374
+    - 0.0012
+    - -0.1141
+    - 0.0866
+    strips:
+    - 15
+    - 7
+    - 7
+    - 6
+    - 16
+    strip_spread_m:
+    - 0.0036
+    - 0.0
+    - 0.002
+    - .nan
+    - 0.0008
+    walls_measured: 5/5
+    length_measured:
+    - true
+    - true
+    - true
+    - true
+    - true
+    ceiling_cells: 10
+    ceiling_p10_p90_m:
+    - 2.2534
+    - 2.2685
+    occluded_openings:
+    - type: door
+      width: null
+      wall: 1
+      offset: 0.17
+      sill: 0.02
+      height: 2.22
+      bounded: false
+      span: 0.84
+    mirrors: []
+- id: room_b
+  walls:
+  - 1.3625
+  - 1.5182
+  - 1.6566
+  - 1.4709
+  floor_area: 2.2365
+  ceiling_height:
+  - 2.2539
+  openings: []
+  survey:
+    wall_offsets_m:
+    - -0.0393
+    - -0.334
+    - -0.1462
+    - -0.0266
+    strips:
+    - 16
+    - 12
+    - 15
+    - 15
+    strip_spread_m:
+    - 0.0022
+    - 0.0016
+    - 0.0011
+    - 0.0022
+    walls_measured: 4/4
+    length_measured:
+    - true
+    - true
+    - true
+    - true
+    ceiling_cells: 8
+    ceiling_p10_p90_m:
+    - 2.2483
+    - 2.2572
+    occluded_openings: []
+    mirrors:
+    - wall: 2
+      offset: 0.84
+      width: 0.82
+adjacency: []
+note: 'fresh held-out visit (fetched after the sliver fix, run once); one laser station
+  with thin coverage of these two small rooms: walls without a laser face are not
+  scored'
