@@ -56,9 +56,10 @@ passing tests: 1.5–2.5 min with model weights cached (the first download is ~7
   the photo ±8% gate on half of them. With true depth the same pipeline meets them on 5 of
   8 and 6 of 8: the remaining failures are cluttered or non-rectangular rooms (office0's
   freestanding boards, office1's jog).
-- **Intervals** are calibrated per tier (`calibration/`). Leave-one-out coverage of the
-  wall intervals is 78% (LiDAR), 92% (photo) and 88% (video) against a 90% target; on the
-  held-out real visit the LiDAR intervals cover 20%, too narrow for rooms that small.
+- **Intervals** are calibrated per tier (`calibration/`), with an absolute floor per
+  quantity under the conformal multiplier (real LiDAR walls: 8 cm). Left-out coverage of
+  wall intervals is 94% (LiDAR, real dev), 92% (photo) and 88% (video) against a 90%
+  target; on the held-out real visit the LiDAR intervals cover a median 60%.
 
 ## Timing (M2, 16 GB)
 
