@@ -34,7 +34,7 @@ only take a live scan. What was run instead uses tools that do accept an upload:
    depth calibration (converted to LAS for upload).
 2. **Pointorama** (web, 2 Oct 2026) was given that cloud. Only its automatic tools were
    used: *Auto Floor* for the level and ceiling, then *Magic Room* brushed over the whole
-   room and accepted. Nothing was edited. Its DXF and IFC exports are in `results/`.
+   room and accepted. Nothing was edited. Its DXF and IFC exports are in `results/`; name, version and export record in `results/APP.md`.
 3. `dxf_to_app.py` reads the DXF outline into `app.yaml`. Each truth wall is located by our
    plan's matching wall line (the two share the recording's frame), and the tool's length
    for it is how far its outline runs along that line, end to end, so a wall drawn in
