@@ -17,7 +17,7 @@ and held-out visits); it exercises the LiDAR tier, not the photo or video tiers.
 | Photo tier: stills per room, any iPhone 15+, one stitched plan | `io/photos.py`, `tiers/photo.py`, `geometry/registration.py` | corner shots + doorway threshold pairs; registration by matched 3D points; rooms joined through the shared threshold | done |
 | Video tier: one handheld clip, any iPhone 15+ | `io/video.py`, `tiers/video.py` | rooms from on-the-spot turns; lens self-calibrated from the turns; visual compass for headings | done |
 | LiDAR tier: depth + poses on Pro devices | `io/stray.py`, `tiers/lidar.py` | Stray Scanner ingest → pose graph → plane-anchored adjustment | done |
-| Same output contract from every tier; intervals widen as data thins | `build.py` (`TierProfile`, per-room scale sigma) | one builder, one schema | done |
+| Same output contract from every tier; intervals widen as data thins | `build.py` (`TierProfile`, per-room scale sigma, `load_few_views`), `calibration/photo_few_views.json` | one builder, one schema; rooms of ≤ 3 photos get a 2.3× wider table (91% left-out coverage, `benchmark/thin_photos.py`) | done |
 | Device matrix | `docs/device_matrix.md` | tier × hardware × measured accuracy | done (synthetic, scanned rooms, real LiDAR); iPhone photo/video pending |
 
 ## Part 2: output contract and gates
@@ -40,13 +40,25 @@ and held-out visits); it exercises the LiDAR tier, not the photo or video tiers.
 | Photo whole-property stitch: no overlaps, footprint ±8% | `tiers/photo.py::threshold_links`, `geometry/stitch.py` | overlap and footprint per run | done (synthetic); iPhone captures pending |
 | Walls: photo ±8%, video ±3%; calibration scored at every tier | `build.py`, `benchmark/calibrate.py` | scanned-room and synthetic results; held-out interval coverage | partial: on scanned rooms with the depth model, photo meets ±8% on 4 of 8 and video ±3% on 0 of 8 (the depth model's per-scene scale bias, measured at 5.9% across scenes); with true depth 6 of 8 and 5 of 8; held-out interval coverage 88–96% after calibration on synthetic and scanned rooms; **real LiDAR: 94% left-out coverage on dev, 60% median on the held-out visit (target 90%; up from 20% after an absolute error floor, `fix_loop.md`)**; photo and video on real iPad frames of the same rooms (off-protocol: walk-arounds, not corner shots or turns): walls 33–94 cm off, intervals wide enough to cover (70–100%) |
 
+## Part 2: benchmark set composition
+
+| Requirement | Where | Evidence | Status |
+|---|---|---|---|
+| One multi-room capture, 3+ rooms plus a connector | `benchmark/sim/flat_a.yaml`; `data/sample/` | synthetic flat: bedroom, bathroom, living room and a hallway connector, exact truth, all tiers; the assessors' real multi-room flats run (no truth comes with them) | partial: no real multi-room capture with laser truth (needs our own phone) |
+| One furnished room with staged damage spanning two damage classes | `benchmark/sim/flat_a.yaml` (`furniture`, `decals`) | furnished bedroom with a water stain and a crack (two classes), mould on the bathroom ceiling; scored at the staged place | partial: synthetic staging only |
+| The same rooms at all three tiers, the multi-room set included, photos as per-room folders that stitch | `benchmark/run_all.sh`; `benchmark/real/make_image_captures.py` | the synthetic flat at LiDAR, video and photo (per-room folders, stitched); the real iPad rooms at all three tiers from the recordings' own frames | done (synthetic); real image tiers are off-protocol |
+| At least one room captured twice at the same tier | `benchmark/run_sim.py` (3 seeds); ARKitScenes visits (2–5 recordings each) | repeatability tables in the report | done |
+| Laser or tape truth on everything; raw sensor data and measurements submitted | `benchmark/ground_truth/`, `benchmark/real/laser_truth.py`, fetch scripts | laser-surveyed truth for every real visit (one held-out wall known wrong, recorded in its file); exact truth for synthetic and scanned rooms | done |
+
 ## Parts 3–5
 
 | Requirement | Where | Evidence | Status |
 |---|---|---|---|
 | Head-to-head vs a consumer app on 2 rooms (≥ 70% beat or tie) | `benchmark/head_to_head/` | 2 rooms: Pointorama (point-cloud tool, automatic) on the same raw iPad LiDAR clouds, scored against laser truth: ours beats or ties 14/15 as shipped; 10/15 (67%) with our depth calibration off | met as shipped, not on identical raw input; a professional tool on an uploaded cloud, not a consumer app's own scan (no phone) |
-| Fix loop: declaration, regenerable before/after, diff | `docs/fix_loop.md`, `benchmark/fix_loop/` | ten regenerable entries, three from real captures, (each one commit, same capture both sides, one scorer; tables in `benchmark/fix_loop/results/`) + history | done |
+| Head-to-head: name the app and version, submit its export, one table of both errors | `benchmark/head_to_head/results/APP.md`, `results/*_pointorama.{dxf,ifc}`, `benchmark/head_to_head/README.md` | Pointorama web app (no version shown: export timestamps recorded), DXF and IFC per room, one table per dimension | done |
+| Fix loop: one-page declaration (worst gate, root cause, predicted number), shipped, regenerable before/after, readable diff | `docs/fix_declaration.md`, `docs/fix_loop.md`, `benchmark/fix_loop/` | declared before the code at `7e5e7be`, shipped `1b84c55`, predictions met, post-mortem of every remaining failure; further declared fixes (interval floors, thin photo input) with prediction vs outcome | done; the declared gate moved 7% → 8%, not to a pass |
 | Commit as you work | git history | small commits with the measured before/after in the message | done |
+| Walk-in: their iPhone 15+, a space we've never seen, tier chosen on the day, our route followed exactly, run cold | `docs/capture_protocol.md`, `RoomScope.command`, `roomscope run` | every tier runs cold from a fresh clone (82 s to a LiDAR plan; live photo 24–74 s and video ~3 min a room) | ready; never run on a real iPhone capture |
 | Walk-in test: every tier runs cold | `scripts/setup.sh`, `scripts/walk_in.sh` | rehearsed on a fresh clone from GitHub: setup 1.5 min (weights cached), then every tier cold, one command each (LiDAR 6.4 min, all gates pass; video 5 min; photo 31 s) | done (synthetic); on our own iPhone captures pending |
 
 ## Deliverables
@@ -64,10 +76,11 @@ and held-out visits); it exercises the LiDAR tier, not the photo or video tiers.
 
 ## Constraints
 
-| Constraint | How it's met |
-|---|---|
-| Handheld consumer capture only | stock App Store apps, handheld |
-| Pretrained models disclosed | MoGe-2 (Microsoft, MIT), MapAnything (Meta, Apache-2.0, fallback only); see `README.md` |
-| Runs without calling our infrastructure | all local; weights from Hugging Face Hub by script |
-| Weights fetched by script | `scripts/setup.sh`; cache under `~/.cache` |
-| Mirrors, glass, wet-look surfaces, low light | mirror test (`geometry/openings.py`); glass returns treated as open; distorted depth views dropped (`tiers/photo.py`); protocol lighting step. **Real evidence:** in a real bathroom recording (ARKitScenes 47429912) the mirror over the sink was told apart from the window beside it on all three recordings, beside a glass shower screen; the laser survey applies the same reflection test |
+| Constraint | Where | How it's met | Status |
+|---|---|---|---|
+| Handheld consumer capture only | `docs/capture_protocol.md` | stock App Store apps, handheld | done |
+| Any pretrained model, dataset or API, with disclosure | `README.md` (Models and data) | MoGe-2 (Microsoft, MIT), MapAnything (Meta, Apache-2.0); datasets ARKitScenes, Replica | done |
+| Runs without calling our infrastructure | whole pipeline | all local, including the `roomscope serve` page; weights from Hugging Face Hub by script | done |
+| Weights and large binaries fetched by script | `scripts/setup.sh`, `benchmark/real/fetch_arkitscenes.py`, `scripts/fetch_replica.sh` | nothing large in git | done |
+| Real-world robustness: furnished rooms and occlusion, room layouts, multi-room transitions, long walkthroughs, sensor noise | `benchmark/real/run_real.py`, `benchmark/run_replica.py`, `benchmark/run_sim.py` | furnished, cluttered real rooms (ARKitScenes, laser truth) and scanned rooms (Replica: offices, a room with a jog); 4-room synthetic flat with a hallway; assessors' 3.5-minute whole-flat walk; odometry drift, sensor noise and low light in simulation | done; furnished-room openings and small rooms are where it fails (benchmark report, Known failure cases) |
+| Cover mirrors, glass, wet-look surfaces, low light | `geometry/openings.py`, `tiers/photo.py`, `docs/capture_notes.md` | mirror test (`geometry/openings.py`); glass returns treated as open; distorted depth views dropped (`tiers/photo.py`); protocol lighting step. **Real evidence:** in a real bathroom recording (ARKitScenes 47429912) the mirror over the sink was told apart from the window beside it on all three recordings, beside a glass shower screen; the laser survey applies the same reflection test | done for mirrors and glass (real evidence); low light measured at every tier in simulation (benchmark report, Low light): LiDAR geometry unaffected, damage recall 3/3 → 0/3, video keeps 1 of 4 rooms, photo coverage 52%; wet-look floors handled by the floor-level rule (`capture_notes.md`), no dedicated measurement |
