@@ -298,6 +298,48 @@ bar for shipping was a spread under ~3.5%; nothing came close, so no code change
 photo and video wall gates remain bound by monocular metric scale. Depth Anything V2 ran
 at 0.2 s a view; Depth Pro at several seconds.
 
+### real-sliver-walls: captures of one room disagreed on its wall sequence (`23cb877` → `7c2909e`)
+
+Developed on visits 423441, 438802 and 467326, which were held out until then and are
+dev now. A fresh held-out visit (422009) was fetched afterwards by the same rule and run
+once (a second, 423461, failed to download and was dropped).
+
+- **Symptom:** repeatability on real recordings. Of 12 pairs of recordings of one room,
+  5 could not be compared at all (different wall counts), and the rest agreed on 11 of 42
+  walls.
+- **Isolation:** the wall lists of each recording side by side. Walls of 0.01–0.26 m
+  appear in some recordings of a room and not in others: a cut corner, or a few-centimetre
+  step between two faces of one wall.
+- **Fix:** a wall under 0.3 m is absorbed into its neighbours in the reported layout. It
+  is dropped where they meet, or two nearly collinear neighbours (under 5 cm apart) are
+  merged; a larger step stays.
+- **Two regressions caught on the way.** The assessors' sample flats lost room connections
+  (6 → 4 and 5 → 4):
+  - merging parallel walls up to 0.3 m apart moved real steps by 15 cm, so the merge is
+    now limited to 5 cm;
+  - absorbing slivers in the layouts the pose adjustment uses moved the poses, and a
+    borderline door elsewhere flipped, so the adjustment's landmark layouts keep every
+    wall.
+
+| all real recordings (dev) | before | after |
+|---|---|---|
+| repeatability pairs comparable | 7 of 12 | 11 of 12 |
+| walls agreeing within 1 cm / 0.5% | 11 of 42 | 16 of 58 |
+| phantom openings | 8 | 6 |
+| openings within 2 cm | 7 | 7 |
+| walls scored against laser truth | 34 | 47 |
+
+Synthetic LiDAR (7/9, 9/9, 9/9), photo and video with true depth (9/9), full-resolution
+damage (3/3, 0 false positives) and the three assessor samples (5 and 6 connections) are
+unchanged.
+
+**Why the repeatability gate still fails:** the walls now pair up, but 1–5 cm differences
+remain between recordings, against a 1 cm / 0.5% gate. The largest come from one
+recording's ~1° skew in the iPad depth itself.
+
+**Not done:** refining door and window edges from the colour images, the second
+planned step, was dropped to finish on time. Opening widths stay ±3–7 cm.
+
 ### Earlier fixes (in the history, found the same way)
 
 These predate the regeneration script, so their before/after is recorded in the commit
