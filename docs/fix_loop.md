@@ -379,6 +379,25 @@ planned step, was dropped to finish on time. Opening widths stay ±3–7 cm.
   object in front of the wall was surveyed as the wall; the note in
   `benchmark/ground_truth/arkitscenes_422009.yaml`), and one held-out room's shape is wrong
   in our plan.
+- **Shipped** (`9543884` code, `971c605` calibration on real dev only, `6bba124` table) and
+  measured by the full benchmark at `6bba124`:
+
+| real LiDAR | predicted | before | after |
+|---|---|---|---|
+| wall floor τ, multiplier | ≈ 3 cm, ×4.3 | none, ×4.23 | **8 cm, ×1.63** |
+| dev coverage, leave one visit out (walls / ceilings / openings / area) | ≈ 94% walls | – | 94% / 93% / 92% / 93% |
+| held-out wall coverage | ≈ 65% | 29% | **55%** |
+| held-out coverage, median per recording | – | 20% | **60%** |
+| held-out ceiling coverage | ≈ 86% | – | 86% |
+| median wall half-width | ≈ 22 cm | ≈ 5 cm | 21.5 cm |
+
+- **Where the prediction missed:** the floor came out at 8 cm, not 3 cm. The declared rule
+  takes the narrowest interval that keeps 90% left-out coverage, and the two differ in
+  median width by 0.2 cm, so it picked 8 cm; held-out wall coverage is 55% against the
+  predicted 65%. The rule was kept as declared, not re-chosen after seeing that.
+- **Why it still falls short of 90% held out:** the wrongly surveyed held-out wall, and a
+  held-out room whose shape our plan gets wrong (worst walls 28–61 cm). Intervals now
+  carry centimetre-scale placement error; they cannot carry a wrong room shape.
 
 ### Earlier fixes (in the history, found the same way)
 
