@@ -249,6 +249,30 @@ for wall below it. A test requiring wall below over half the barrier's length fi
 room but splits or merges two of the bathroom recordings, so it was not shipped. The
 segmentation decides bulkhead against header on thresholds, and this room sits on one.
 
+### A fix that was not shipped: a door-height scale prior for photo and video
+
+- **The failing gates:** photo walls within ±8% on 4 of 8 scanned rooms; video within ±3%
+  on 0 of 8. With rendered true depth the same pipeline gets 6/8 and 5/8, so the limit is
+  the depth model's per-scene metric scale (−14% to +4% across scenes).
+- **The idea:** interior door heads are about 2.03 m almost everywhere (standard leaves
+  are 1.98–2.04 m in Europe and the US). A detected door's measured head height would then
+  fix its room's scale, as 2.03 / h.
+- **The evidence, before writing any code:**
+  - **Scanned rooms (where the gates fail):** no genuine door is detected in any of the 16
+    photo and video runs, with true depth or the model. What is detected are 2.3–2.9 m
+    office openings and glass partitions. The prior has nothing to act on there.
+  - **Synthetic flat, true depth:** door heads read 1.99–2.05 m against truth of 2.00 and
+    2.05 m. The cue itself is sound.
+  - **Synthetic flat, depth model:** the errors are not one scale per room. Walls and
+    ceiling disagree in sign within a room, and door heads measured with model depth
+    scatter by about ±4%. Applied, the door scale changes photo worst walls 3.2, 4.2, 13.1
+    and 0.9% to 3.5, 2.7, 8.6 and 2.4% (no room crosses the ±8% gate either way). It makes
+    video worse: living 9.7% → ~12.3%, bathroom 74% → ~91%. A 2–3% prior would also
+    narrow intervals the door measurements can't support.
+- **Outcome:** not shipped. Neither gate would move, and the intervals would become less
+  honest. The scale lever left is the depth model itself (a stronger or ensembled
+  metric-depth model), or the user's phone: the LiDAR tier.
+
 ### Earlier fixes (in the history, found the same way)
 
 These predate the regeneration script, so their before/after is recorded in the commit
