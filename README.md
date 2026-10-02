@@ -15,10 +15,15 @@ and `plan.png`. The output contains:
 ## Quick start
 
 ```
-git clone git@github.com:suraj-ps25/roomscope.git && cd roomscope
-scripts/setup.sh --lidar      # ~2-3 min: LiDAR tier, no model weights
-scripts/setup.sh              # adds photo/video models (~7 GB of weights)
+git clone https://github.com/suraj-ps25/roomscope.git && cd roomscope
+scripts/setup.sh --lidar      # LiDAR tier, no model weights
+scripts/setup.sh              # adds photo/video models (~7.7 GB of weights)
 ```
+
+Measured from a fresh clone with empty package and model caches (Apple M2, ~37 MB/s
+download): clone + `setup.sh --lidar` + the first `roomscope run` on an assessor sample
+took **82 s**. The full setup adds PyTorch and the weights, about 3.5 min of download at
+that rate.
 
 Capture following [`docs/capture_protocol.md`](docs/capture_protocol.md), then:
 
@@ -26,7 +31,8 @@ Capture following [`docs/capture_protocol.md`](docs/capture_protocol.md), then:
 .venv/bin/roomscope run <capture> --out runs/<name>
 ```
 
-`<capture>` can be a Stray Scanner recording folder (LiDAR), a video file (video), or a
+`<capture>` can be a Stray Scanner recording folder (LiDAR; a folder that only wraps one,
+as an unzipped export does, works too), a video file (video), or a
 folder with one sub-folder of photos per room (photo: corner shots plus, at each doorway,
 one photo into each room from the threshold). The tier is detected from the
 folder's shape; force it with `--tier`.
