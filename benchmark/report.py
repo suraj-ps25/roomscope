@@ -251,7 +251,19 @@ def calibration_section(bench: Path) -> list[str]:
             rows.append({"tier / quantity": f"{tier} / {quantity}", "multiplier": f"{k:.2f}",
                          "samples": table["samples"].get(quantity), "held-out coverage":
                          _pct(table["held_out_coverage"].get(quantity), 0)})
-    return lines + _table(rows, "tier / quantity") + [""]
+    lines += _table(rows, "tier / quantity") + [""]
+    shipped = {t: _load(ROOT / "calibration" / f"{t}.json") for t in ("lidar", "video", "photo")}
+    differ = [(t, q, k, shipped[t]["multipliers"].get(q)) for t in ("lidar", "video", "photo")
+              for q, k in ((_load(bench / f"calibration_{t}.json") or {}).get("multipliers", {})).items()
+              if shipped[t] and abs(shipped[t]["multipliers"].get(q, k) - k) > 0.01]
+    if differ:
+        lines += ["**Shipped tables differ from this refit** (`calibration/` is what plans use):", ""]
+        lines += [f"- {t} / {q}: shipped {old:.2f}, refit {k:.2f}" for t, q, k, old in differ]
+        lines += ["", "The LiDAR refit includes the dev living room, which now splits at a bulkhead (see `docs/fix_loop.md`):",
+                  "its matched piece is a fraction of the true floor area, so one sample drives the floor-area multiplier.",
+                  "The shipped table (fitted on the dev visits before that change) is the one the held-out coverage above",
+                  "was measured with.", ""]
+    return lines
 
 
 def main() -> int:
