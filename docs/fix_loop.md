@@ -359,8 +359,9 @@ planned step, was dropped to finish on time. Opening widths stay ±3–7 cm.
   dev leave-one-visit-out coverage ≈ 94%; held-out wall coverage 29% → ≈ 65%, median
   wall half-width ≈ 22 cm; ceilings τ ≈ 1 cm, held-out coverage ≈ 86% at ≈ 2.7 cm
   half-width. It will not reach 90% held out: one held-out wall's truth is 33 cm off (an
-  object in front of the wall was surveyed as the wall; `fix_declaration.md` §4 has the
-  method for checking it), and one held-out room's shape is wrong in our plan.
+  object in front of the wall was surveyed as the wall; the note in
+  `benchmark/ground_truth/arkitscenes_422009.yaml`), and one held-out room's shape is wrong
+  in our plan.
 
 ### Earlier fixes (in the history, found the same way)
 
