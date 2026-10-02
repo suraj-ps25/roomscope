@@ -31,12 +31,12 @@ passing tests: 1.5–2.5 min with model weights cached (the first download is ~7
 
 ## Accuracy by tier
 
-| Quantity | LiDAR (synthetic, 3 captures) | LiDAR (real iPad Pro, held-out laser truth) | Video | Photo |
+| Quantity | LiDAR (synthetic, 3 captures) | LiDAR (real iPad Pro, laser truth) | Video | Photo |
 |---|---|---|---|---|
-| Wall length | max 1.3–2.0 cm per capture | large room: median 2.4–3.6 cm, worst 5.4 cm; small 5-wall room: worst 16–22 cm | scanned rooms, depth model: worst wall median 11.2%, 0 of 8 rooms within ±3%; true depth: 1.9%, 5 of 8 | scanned rooms, depth model: worst wall median 9.0%, 4 of 8 within ±8%; true depth: 2.0%, 6 of 8 |
-| Ceiling height | max 0.24–1.16 cm (gate 1.5 cm: passes on all three) | 8 of 10 within 1.5 cm (median +0.2 cm) after the depth calibration | flat, true depth: max 1.3 cm | flat, true depth: max 0.65 cm |
+| Wall length | max 1.3–2.0 cm per capture | dev: large room median 2.4–3.6 cm, worst 5.4 cm; small rooms worst 16–25 cm. Held-out (two ~2 m² rooms): worst wall median 38 cm | scanned rooms, depth model: worst wall median 11.2%, 0 of 8 rooms within ±3%; true depth: 1.9%, 5 of 8 | scanned rooms, depth model: worst wall median 9.0%, 4 of 8 within ±8%; true depth: 2.0%, 6 of 8 |
+| Ceiling height | max 0.24–1.16 cm (gate 1.5 cm: passes on all three) | dev 12 of 14, held-out 6 of 7 within 1.5 cm, after the depth calibration | flat, true depth: max 1.3 cm | flat, true depth: max 0.65 cm |
 | Floor area | within 0.75% | – | scanned rooms, depth model: median 13.9% | scanned rooms, depth model: median 13.8% |
-| Opening width ≤ 2 cm | 7/9, 9/9, 9/9 (25 of 27; seed 0's two glass windows ~3 cm off) | 6 of 16 (misses and phantoms count) | 9/9 on the flat with true depth | 9/9 on the flat with true depth |
+| Opening width ≤ 2 cm | 7/9, 9/9, 9/9 (25 of 27; seed 0's two glass windows ~3 cm off) | dev 7 of 23, held-out 0 of 8 (misses and phantoms count) | 9/9 on the flat with true depth | 9/9 on the flat with true depth |
 | Stitch | adjacency correct on all three; footprint within 0.75% | a connection found in 4 of 6 recordings with two or more rooms (adjacency itself not surveyed) | correct with true depth | correct with true depth |
 | Repeatability (1 cm or 0.5%) | 16/16 walls for one pair, 11/16 and 5/16 for the pairs with seed 1 (worst 3.3 cm): limited by the sensor's per-capture depth scale bias (σ 0.2%) | real bathroom (dev): 2–3 of 4 walls, worst 4.9 cm | – | – |
 | Drift ablation | off: walls out by up to 1.8 m, adjacency wrong on all three | – | no long trajectory | no trajectory |
@@ -56,13 +56,14 @@ passing tests: 1.5–2.5 min with model weights cached (the first download is ~7
   the photo ±8% gate on half of them. With true depth the same pipeline meets them on 5 of
   8 and 6 of 8: the remaining failures are cluttered or non-rectangular rooms (office0's
   freestanding boards, office1's jog).
-- **Intervals** are calibrated per tier (`calibration/`); held-out coverage after
-  calibration is 88–96% for walls across the three tiers.
+- **Intervals** are calibrated per tier (`calibration/`). Leave-one-out coverage of the
+  wall intervals is 78% (LiDAR), 92% (photo) and 88% (video) against a 90% target; on the
+  held-out real visit the LiDAR intervals cover 20%, too narrow for rooms that small.
 
 ## Timing (M2, 16 GB)
 
 | Tier | Typical run |
 |---|---|
-| LiDAR | ~6 min for a 4-room, 3.8-minute protocol walk (synthetic, damage included) |
-| Video | ~1–2 min per room turn (first run; model outputs are cached by content) |
-| Photo | ~10–30 s per room after depth (first run); cached re-runs are seconds |
+| LiDAR | 46 s to 5.4 min on the assessors' samples (36 s to 3.5 min recordings, damage included); ~6 min for a 4-room synthetic walk |
+| Video | ~3 min per room live (190–195 s measured, cache off); model outputs are cached by content, so re-runs are the geometry alone (~50 s) |
+| Photo | 24–74 s per room live (cache off); cached re-runs are seconds |
