@@ -5,6 +5,7 @@ import open3d as o3d
 import pytest
 
 from roomscope.geometry.cloud import frame_points
+from roomscope.io.detect import detect_tier, resolve_capture
 from roomscope.io.stray import read_stray
 from roomscope.sim.scene import build_mesh, load_scene
 from roomscope.sim.writers import write_lidar_tier
@@ -49,3 +50,11 @@ def test_rgb_decodes(capture):
     rgb = bundle.frames[1].rgb()
     assert rgb.shape == (240, 320, 3)
     assert rgb.mean() > 20
+
+
+def test_recording_inside_a_wrapper_folder(capture, tmp_path):
+    wrapper = tmp_path / "living_room"
+    wrapper.mkdir()
+    (wrapper / "c00a170fe1").symlink_to(capture, target_is_directory=True)
+    assert resolve_capture(wrapper) == wrapper / "c00a170fe1"
+    assert detect_tier(resolve_capture(wrapper)) == "lidar"

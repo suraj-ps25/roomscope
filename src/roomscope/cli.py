@@ -32,12 +32,12 @@ def _run(args: argparse.Namespace) -> int:
     import time
     from pathlib import Path
 
-    from .io.detect import detect_tier
+    from .io.detect import detect_tier, resolve_capture
     from .render import render_plan
     from .schema import validate
 
     started = time.perf_counter()
-    capture = Path(args.capture_dir)
+    capture = resolve_capture(args.capture_dir)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     tier = args.tier or detect_tier(capture)
