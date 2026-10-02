@@ -105,6 +105,7 @@ class Room:
     label: str | None = None
     coverage: float | None = None
     notes: list[str] = field(default_factory=list)
+    views: int | None = None
 
 
 @dataclass
@@ -218,6 +219,8 @@ def _room(r: Room) -> dict:
         quality["coverage"] = r.coverage
     if r.notes:
         quality["notes"] = r.notes
+    if r.views is not None:
+        quality["views"] = r.views
     if quality:
         room["quality"] = quality
     return room

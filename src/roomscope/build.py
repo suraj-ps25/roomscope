@@ -59,6 +59,7 @@ class RoomGeometry:
     damage: object = None
     label: str | None = None
     scale_sigma: float | None = None
+    views: int | None = None   # photos the room was reconstructed from (photo tier)
 
 
 @dataclass(frozen=True)
@@ -82,6 +83,25 @@ def load_calibration(tier: str) -> tuple[dict[str, float], dict[str, float], str
         return {}, {}, None
     table = json.loads(path.read_text())
     return table["multipliers"], table.get("floors_m", {}), table.get("id")
+
+
+@dataclass(frozen=True)
+class FewViews:
+    max_views: int
+    multipliers: dict
+    floors: dict
+    table_id: str | None
+
+
+def load_few_views(tier: str) -> FewViews | None:
+    """The separate table for rooms reconstructed from few photos (calibration/<tier>_few_views.json):
+    their errors are mostly where the walls are, which the main table's well-covered rooms
+    never show."""
+    path = CALIBRATION_DIR / f"{tier}_few_views.json"
+    if not path.exists():
+        return None
+    table = json.loads(path.read_text())
+    return FewViews(int(table["max_views"]), table["multipliers"], table.get("floors_m", {}), table.get("id"))
 
 
 def _polygon_from_lines(normals: np.ndarray, offsets: np.ndarray) -> np.ndarray:
@@ -144,10 +164,15 @@ def _damage_regions(room: RoomGeometry, key: str, sigma: _Sigma) -> list[model.D
     return regions
 
 
-def build_room(room: RoomGeometry, sigma: _Sigma) -> tuple[model.Room, list[model.ScopeItem]]:
+def build_room(room: RoomGeometry, sigma: _Sigma, few_views: FewViews | None = None) -> tuple[model.Room, list[model.ScopeItem]]:
     from dataclasses import replace
 
     from .damage.scope import scope_for_surface
+
+    notes = list(room.notes)
+    if few_views is not None and room.views is not None and room.views <= few_views.max_views:
+        sigma = _Sigma(sigma.profile, few_views.multipliers, few_views.floors)
+        notes.append(f"{room.views} photos: intervals from the few-photos calibration ({few_views.table_id})")
 
     if room.scale_sigma is not None:
         # Photo rooms carry their own scale uncertainty (it depends on how many photos).
@@ -201,7 +226,8 @@ def build_room(room: RoomGeometry, sigma: _Sigma) -> tuple[model.Room, list[mode
                                          line.quantity, line.reason, line.count))
 
     built = model.Room(room.id, polygon.round(4).tolist(), ceiling, floor_area, walls, openings, surfaces, flags,
-                       perimeter=perimeter, label=room.label or room.id, coverage=room.coverage, notes=room.notes)
+                       perimeter=perimeter, label=room.label or room.id, coverage=room.coverage, notes=notes,
+                       views=room.views)
     return built, scope
 
 
@@ -211,7 +237,8 @@ def build_plan(capture_id: str, profile: TierProfile, rooms: list[RoomGeometry],
                extra_adjacency: list[tuple[str, str]] | None = None) -> model.Plan:
     multipliers, floors, table_id = load_calibration(profile.tier)
     sigma = _Sigma(profile, multipliers, floors)
-    results = [build_room(room, sigma) for room in rooms]
+    few_views = load_few_views(profile.tier)
+    results = [build_room(room, sigma, few_views) for room in rooms]
     built = [room for room, _ in results]
     scope = [item for _, items in results for item in items]
 

@@ -608,7 +608,8 @@ def plan_from_photo_sets(folders: dict, capture_id: str, profile, source_app: st
         geometries.append(RoomGeometry(name, transform.apply(layout.polygon), normals, offsets, sigmas,
                                        layout.floor_z, layout.ceiling_z, layout.floor_sigma, layout.ceiling_sigma,
                                        converted, notes=rec.notes + layout.notes, damage=damage, label=name,
-                                       scale_sigma=rec.scale_sigma))
+                                       scale_sigma=rec.scale_sigma,
+                                       views=len(rec.frames) if profile.tier == "photo" else None))
     timing["damage"] = round(time.perf_counter() - start, 2)
 
     failed = [n for n, r in reconstructions.items() if r.layout is None]
