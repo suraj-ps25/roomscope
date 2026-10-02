@@ -200,7 +200,7 @@ were **held out**, chosen by rule before being looked at.
     gaps closed when no ceiling was seen, and the ceiling is then a stated prior with a
     wide interval. The flat comes out as 8 rooms either way.
   - Decoding the video took 39 of 43 minutes on a 3.5-minute scan. One sequential decode
-    makes it 8 minutes.
+    makes the whole run 5.4 minutes, cold.
 
 The full tables are in [`benchmark_report.md`](benchmark_report.md).
 
