@@ -132,7 +132,7 @@ rooms come out as their bounding rectangle, a stated limitation.
 
 | tier | dominant error | measured size | how it is handled | wall multiplier, held-out coverage |
 |---|---|---|---|---|
-| LiDAR | depth scale of the device | −0.88% (iPad Pro) | per-device scale ×1.0088 (§8) | ×4.23; 71% median on real recordings |
+| LiDAR | depth scale of the device | −0.88% (iPad Pro) | per-device scale ×1.0088 (§8) | ×4.23; 71% median on dev, 20% on the held-out visit |
 | LiDAR | VIO drift | 1%/m + 2 mm budget | pose graph + plane-anchored adjustment (§3) | (in the above) |
 | LiDAR | jamb edges at 256×192 | ±3–7 cm on openings | density-mode reveal fit | openings ×2.04 |
 | video | depth model's per-scene scale | sd 5.9%, −14% to +4% | carried in the interval, not removable by averaging | ×8.34; 88% |
@@ -177,8 +177,10 @@ asks a person to: the plan names the walls; the scan gives their faces, corners,
 room-wide floor-to-ceiling height and openings (doors face to face, windows inside the
 frame, laser shadows and recesses rejected, mirrors identified by reflecting the
 see-through points). Every survey was checked against its overlay (`docs/real/`). Two
-visits were **dev**: bugs found and fixed, LiDAR intervals and depth scale fitted. Three
-were **held out**, chosen by rule before being looked at.
+visits were **dev** from the start: bugs found and fixed, LiDAR intervals and depth scale
+fitted. Three were **held out**, chosen by rule before being looked at; the last fix (§9,
+sliver walls) was developed on them, so they are dev now, and a fresh visit chosen by the
+same rule is the held-out set.
 
 - **Found on dev:**
   - a 10 cm ceiling step was traced as a wall and cut a bathroom in two (1.94 m for 2.72 m);
@@ -187,18 +189,23 @@ were **held out**, chosen by rule before being looked at.
     another wall.
 - **The iPad's depth reads 0.88% short.** Registered on the laser by similarity ICP, every
   well-registered dev recording needs a scale of 1.0087–1.0106, and every real ceiling was
-  low. The device calibration that corrects it (§9) took held-out ceilings within 1.5 cm
-  from 4 to 8 of 10. It is applied to that device only: a phone never measured is not
+  low. The device calibration that corrects it (§9) took the then held-out ceilings within
+  1.5 cm from 4 to 8 of 10. It is applied to that device only: a phone never measured is not
   corrected.
-- **Held-out:**
+- **Dev, including the formerly held-out visits:**
   - the large room (≈18 m²): walls a median 2.4–3.6 cm off, worst 5.4 cm; ceilings within
-    0.7 cm;
-  - a small 5-wall room: worst walls 16–22 cm, partly from sliver walls that break the
-    wall sequence;
-  - openings: 6 of 16 within 2 cm;
-  - 7–11 false damage regions per recording;
-  - one visit's three recordings (27–35 s each) never closed a room;
-  - interval coverage: median 71% against a 90% target.
+    0.7 cm; the bathroom: 2.1–2.9 cm, worst 5.7 cm;
+  - small rooms: worst walls 16–25 cm;
+  - ceilings within 1.5 cm on 12 of 14; openings 7 of 23 within 2 cm;
+  - 2–11 false damage regions per recording;
+  - one visit's three recordings (27–35 s each) never closed a room.
+- **Held-out (visit 422009, run once):** two very small rooms (about 2 m², walls 1.0–2.3 m)
+  whose laser survey is thin (one scanner station; the plan placed with 56% of wall
+  samples within 5 cm). Ceilings hold: 6 of 7 within 1.5 cm. Walls do not: each
+  recording's worst wall a median 38 cm off, all 8 reported openings phantom, interval
+  coverage 20%. Recordings of one room disagree on its wall count, so short walls and
+  cut corners in rooms this small are what the pipeline gets wrong; how much of the 38 cm
+  is the thin survey is not separated.
 - **Photo and video on the same rooms.** Fed the recordings' own colour frames, the image
   tiers are far off: worst walls 33–94 cm. These walk-arounds, mostly tilted up, are not
   the protocol's corner shots and turns, so this is an off-protocol test. The intervals
@@ -245,7 +252,7 @@ entries regenerate from their two commits on an identical capture with one score
 
 ## 10. Limitations and next steps
 
-- **Real openings** stay far from the 85% gate (6 of 16 held-out within 2 cm). Next: jamb
+- **Real openings** stay far from the 85% gate (7 of 23 on dev, 0 of 8 held-out). Next: jamb
   edges from the colour image, not 256×192 depth.
 - **Segmentation sits on thresholds** where bulkheads, ceiling steps and headers look
   alike. A dev room split at a bulkhead after the depth-scale change. Small rooms sprout
