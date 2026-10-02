@@ -144,6 +144,30 @@ needed (`scripts/setup.sh` pre-fetches them).
 Model outputs are cached by content hash and replay bit-for-bit. `ROOMSCOPE_CACHE=off`
 forces the live path.
 
+Versions: MoGe at commit `74fbce0`, MapAnything at `3d10cf7`, utils3d at `ca3e9ac` (pinned in
+`scripts/setup.sh`); Hugging Face weights `Ruicheng/moge-2-vitl-normal` and
+`facebook/map-anything-apache`. Every Python package version the benchmark ran with is in
+`requirements.lock` (Python 3.12.13); `uv pip install -r requirements.lock` reproduces it.
+
+## Environment variables (all optional)
+
+| Variable | Default | Effect |
+|---|---|---|
+| `ROOMSCOPE_CACHE` | `on` | `off` runs every depth and multi-view inference live (the walk-in path) |
+| `ROOMSCOPE_CACHE_DIR` | `~/.cache/roomscope` | where model outputs are cached |
+| `ROOMSCOPE_DEVICE` | auto (`cuda`, `mps`, `cpu`) | force the torch device |
+| `ROOMSCOPE_QUIET` | unset | `1` silences per-stage progress lines |
+| `HF_HOME` | `~/.cache/huggingface` | where model weights are stored |
+
+## Hardware
+
+Developed, tested and timed on an Apple M2 with 16 GB (macOS); the photo/video models
+use the M-series GPU (MPS). Linux and Windows are untested (the code has a CUDA/CPU path
+via `ROOMSCOPE_DEVICE`, but no run on either has been measured). Disk: about 1 GB for the code and
+LiDAR tier, about 8 GB more for the photo/video weights, and about 35 GB for the full
+benchmark data (ARKitScenes recordings and laser scans, Replica). Capture devices are in
+[`docs/device_matrix.md`](docs/device_matrix.md).
+
 ## Layout
 
 ```
