@@ -2,10 +2,10 @@ app: Pointorama web app, automatic Auto Floor + Magic Room, 2026-10-02
 rooms:
   bathroom:
     walls:
-    - 1.8035
-    - 1.9515
-    - 2.5673
-    - 1.2096
+    - 2.6648
+    - 1.9511
+    - 2.5653
+    - 1.6518
     outline_edges: 13
     floor_area: 5.6819
     openings: []
