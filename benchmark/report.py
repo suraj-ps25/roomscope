@@ -169,8 +169,9 @@ def real_section(bench: Path) -> list[str]:
               "stream (`benchmark/real/make_image_captures.py`): stills chosen as the photo protocol would take them,",
               "and the whole stream as a clip. These recordings are walk-arounds with the device mostly tilted up, not",
               "the protocol's corner shots and on-the-spot turns, so the image tiers run off-protocol here. **dev** visits were used to find and fix bugs and to fit the LiDAR",
-              "interval calibration; **held-out** visits were chosen by a fixed rule before being looked at (one laser",
-              "scan, three or more recordings) and run once, with no change made after. Wall errors are on lengths the",
+              "interval calibration. Visits 423441, 438802 and 467326 were held out until the sliver-wall fix was",
+              "developed on them, and are dev now. The **held-out** visit, 422009, was chosen by the same fixed rule (one",
+              "laser scan, three or more recordings) after that fix, and run once. Wall errors are on lengths the",
               "laser measured end to end; rooms are undamaged, so every damage region reported is a false positive.", ""]
     rows = []
     for run in summary["runs"]:
@@ -348,6 +349,9 @@ def main() -> int:
              "tiers; the depth model's measured scale error on real iPad imagery; and real iPad Pro LiDAR recordings",
              "of real rooms scored against laser scans, on dev and held-out visits. Gates are the brief's: openings ≤ 2 cm on",
              "≥ 85% (misses and phantoms count), ceiling ≤ 1.5 cm, walls ±3% (video) / ±8% (photo), footprint ±8%.", ""]
+    provenance = bench / "PROVENANCE.md"
+    if provenance.exists():
+        lines += provenance.read_text().strip().split("\n") + [""]
     lines += (lidar_section(bench) + flat_section(bench) + replica_section(bench) + depth_section(bench)
               + damage_section(bench) + real_section(bench) + head_to_head_section() + samples_section(bench) + calibration_section(bench))
     Path(args.out).write_text("\n".join(lines) + "\n")
