@@ -80,6 +80,10 @@ done
 echo "== live timing (photo and video with the model-output cache off)"
 [[ -f $OUT/timing_live.json ]] || $PY benchmark/time_live.py --out "$OUT/timing_live.json"
 
+echo "== thin photo input: every photo capture cut to 2 and 3 photos a room (the few-photos interval table)"
+[[ -f $OUT/thin_pairs.txt ]] || $PY benchmark/thin_photos.py --out "$OUT/thin" > "$OUT/thin_pairs.txt"
+$RS calibrate photo $(cat "$OUT/thin_pairs.txt") --max-views 3 --out "$OUT/calibration_photo_few_views.json" > /dev/null
+
 echo "== interval calibration (split conformal, leave-one-property-out coverage)"
 # LiDAR intervals are fitted on real recordings only, from the dev visits (the held-out
 # visit never calibrates): synthetic captures' near-perfect walls would pull them narrow.
