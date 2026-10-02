@@ -273,6 +273,31 @@ segmentation decides bulkhead against header on thresholds, and this room sits o
   honest. The scale lever left is the depth model itself (a stronger or ensembled
   metric-depth model), or the user's phone: the LiDAR tier.
 
+### A fix that was not shipped: an ensemble of metric-depth models
+
+The photo ±8% and video ±3% wall gates fail because of MoGe-2's metric scale, which differs
+from scene to scene. The idea was to correct MoGe-2's scale per room with a second
+metric-depth model, keeping MoGe-2's shape. The test was measured before any pipeline
+change: the per-scene median depth ratio on the same 16 views per scene that
+`benchmark/depth_model_scale.py` uses, over 23 scenes (8 Replica renders against true
+depth, 15 real ARKitScenes iPad recordings against their LiDAR depth). A constant bias
+was removed leave-one-scene-out, since a fixed bias could be calibrated away and only the
+scene-to-scene spread matters.
+
+| model (licence, size) | spread across scenes (sd of log) | worst scene |
+|---|---|---|
+| MoGe-2 ViT-L (MIT), as shipped | 6.9% | 16.3% |
+| Depth Anything V2 Metric Indoor Small (Apache-2.0, 25 M) | 13.1% | 27.1% |
+| Apple Depth Pro (Apple ML Research Model licence, 1.9 GB) | 15.2% (7 Replica scenes; dropped after them: ~7 min per scene) | – |
+| MoGe-2 + Depth Anything, geometric mean, weight 0.25 / 0.5 / 0.75 | 8.0% / 9.7% / 11.3% | 17.5% / 18.3% / 21.1% |
+
+Every ensemble is worse than MoGe-2 alone. Per view, the two models' errors correlate only
+weakly (0.36), and Depth Anything's scale moves with the domain much more than MoGe-2's:
+median ratio 1.28 on renders against 1.46 on real frames (MoGe-2: 0.94 against 1.03). The
+bar for shipping was a spread under ~3.5%; nothing came close, so no code changed. The
+photo and video wall gates remain bound by monocular metric scale. Depth Anything V2 ran
+at 0.2 s a view; Depth Pro at several seconds.
+
 ### Earlier fixes (in the history, found the same way)
 
 These predate the regeneration script, so their before/after is recorded in the commit
