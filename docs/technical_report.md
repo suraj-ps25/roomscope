@@ -13,14 +13,12 @@ Results are in [`benchmark_report.md`](benchmark_report.md); requirement coverag
   intrinsics) and the built-in Camera app (photo, video). No custom app: anyone with an
   iPhone can capture today. The protocol (`capture_protocol.md`) is part of the
   algorithm. Each tier asks for exactly the motion its method needs.
-- **No iPhone was available to build this.** Development therefore leaned on four kinds
-  of evidence, each used for what it can show: a synthetic flat with exact truth (every
-  stage, every tier); real scanned rooms rendered as protocol captures (realistic imagery
-  with exact metric truth); real iPad frames with LiDAR depth (the depth model's metric
-  scale on real imagery); and **real iPad Pro LiDAR recordings of real rooms scored
-  against laser scans** (Apple's ARKitScenes, §8), on dev visits and on held-out visits
-  run once. The head-to-head was run on a recording's raw cloud (§8); the walk-in on our
-  own phone captures is scripted but not run.
+- **No iPhone was available to build this.** Evidence came from four sources, each used
+  for what it can show: a synthetic flat with exact truth; real scanned rooms rendered as
+  protocol captures; real iPad frames for the depth model's metric scale; and **real iPad
+  Pro LiDAR recordings scored against laser scans** (ARKitScenes, §8), dev and held-out.
+  The head-to-head ran on a recording's raw cloud (§8); the walk-in on our own phone
+  captures is scripted but not run.
 - **Every number has an interval.** The schema requires `ci_low`/`ci_high` on every
   measurement; intervals are propagated, then calibrated per tier (§6).
 
@@ -211,13 +209,11 @@ same rule is the held-out set.
   tiers are far off: worst walls 33–94 cm. These walk-arounds, mostly tilted up, are not
   the protocol's corner shots and turns, so this is an off-protocol test. The intervals
   were wide enough to cover the truth on most.
-- **The assessors' sample captures** (Stray Scanner, no truth) exposed two assumptions:
-  - Two of three were filmed with the phone held level, and segmentation needed the
-    ceiling: one gave no room. Walls are now traced above furniture height and doorway
-    gaps closed when no ceiling was seen, and the ceiling is then a stated prior with a
-    wide interval. The flat comes out as 8 rooms either way.
-  - Decoding the video took 39 of 43 minutes on a 3.5-minute scan. One sequential decode
-    makes the whole run 5.4 minutes, cold.
+- **The assessors' sample captures** (Stray Scanner, no truth) exposed two assumptions.
+  Two of three never filmed the ceiling, which segmentation needed: one gave no room. Walls
+  are now traced above furniture height with doorway gaps closed, and the ceiling becomes a
+  stated prior with a wide interval; the flat is 8 rooms either way. And video decoding
+  took 39 of 43 minutes; one sequential decode makes the run 5.4 minutes, cold.
 - **Head-to-head without a phone.** Consumer scanning apps only take a live scan, so two
   rooms' raw LiDAR (iPad poses, no correction of ours) went as point clouds into
   Pointorama's automatic room tools, unedited. Against the laser we beat or tie 14 of 15
