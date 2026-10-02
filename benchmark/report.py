@@ -361,6 +361,13 @@ def samples_section(bench: Path) -> list[str]:
 
 
 def calibration_section(bench: Path) -> list[str]:
+    few = _load(bench / "calibration_photo_few_views.json")
+    few_lines = []
+    if few:
+        few_lines = ["", f"Rooms reconstructed from ≤ {few['max_views']} photos use their own table (`calibration/photo_few_views.json`), fitted on",
+                     f"{few['id'].split('-')[-1]} of the photo captures cut to 2 and 3 photos a room (`benchmark/thin_photos.py`):",
+                     "walls ×{:.2f}, left-out coverage {}.".format(few["multipliers"].get("wall_length", float("nan")),
+                                                                   ", ".join(f"{q} {100 * c:.0f}%" for q, c in few["held_out_coverage"].items())), ""]
     lines = ["## Interval calibration", "",
              "Propagated intervals (fit uncertainty through the geometry, plus the tier's scale budget) are scaled per tier",
              "and quantity by split-conformal multipliers fitted on these runs and shipped in `calibration/`. The",
@@ -389,7 +396,7 @@ def calibration_section(bench: Path) -> list[str]:
                   "its matched piece is a fraction of the true floor area, so one sample drives the floor-area multiplier.",
                   "The shipped table (fitted on the dev visits before that change) is the one the held-out coverage above",
                   "was measured with.", ""]
-    return lines
+    return lines + few_lines
 
 
 def main() -> int:
