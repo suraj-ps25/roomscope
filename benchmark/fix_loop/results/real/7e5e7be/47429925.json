@@ -1,0 +1,73 @@
+{
+  "schema_version": "1.0",
+  "capture": {
+    "id": "47429925",
+    "tier": "lidar",
+    "source_app": "ARKitScenes (iPad Pro LiDAR)",
+    "device": null,
+    "frames_used": 161,
+    "notes": [
+      "321 frames with poses",
+      "dropped a 5.8 m2 region only 30% enclosed by walls (open space seen through an opening, not a room)"
+    ]
+  },
+  "rooms": [],
+  "adjacency": [],
+  "property": {
+    "room_count": 0,
+    "footprint_area": {
+      "value": 0.0,
+      "unit": "m2",
+      "ci_low": 0.0,
+      "ci_high": 0.0,
+      "ci_level": 0.9,
+      "method": "lidar depth fusion, plane fit"
+    },
+    "extent_x": {
+      "value": 0.0,
+      "unit": "m",
+      "ci_low": -0.016448536269514716,
+      "ci_high": 0.016448536269514716,
+      "ci_level": 0.9,
+      "method": "lidar depth fusion, plane fit"
+    },
+    "extent_y": {
+      "value": 0.0,
+      "unit": "m",
+      "ci_low": -0.016448536269514716,
+      "ci_high": 0.016448536269514716,
+      "ci_level": 0.9,
+      "method": "lidar depth fusion, plane fit"
+    }
+  },
+  "scope": [],
+  "drift": {
+    "method": "4-DoF pose graph with ICP loop closures, then plane-anchored bundle adjustment",
+    "enabled": true,
+    "residual_before_m": null,
+    "residual_after_m": null,
+    "notes": [
+      "pose graph: 10 fragments of 3 s, 0 loop closures",
+      "no loop closures found; drift left uncorrected (capture did not revisit any area)",
+      "plane adjustment: no plane associations; skipped",
+      "plane adjustment: no plane associations; skipped",
+      "plane adjustment: no plane associations; skipped"
+    ]
+  },
+  "calibration": {
+    "ci_level": 0.9,
+    "method": "split-conformal per tier and quantity",
+    "table": "lidar-conformal-7captures"
+  },
+  "timing_s": {
+    "ingest": 0.0,
+    "drift": 1.0,
+    "reconstruct": 1.43,
+    "stitch": 5.57,
+    "measure": 0.0,
+    "openings": 0.0,
+    "damage": 0.03,
+    "assemble": 0.0,
+    "total": 8.52
+  }
+}

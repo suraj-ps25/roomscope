@@ -1,0 +1,1003 @@
+{
+  "schema_version": "1.0",
+  "capture": {
+    "id": "47429913",
+    "tier": "lidar",
+    "source_app": "ARKitScenes (iPad Pro LiDAR)",
+    "device": null,
+    "frames_used": 134,
+    "notes": [
+      "268 frames with poses",
+      "room_1: wall 2: 0.60 x 0.80 m see-through patch is a mirror (reflected points land on this room); not an opening"
+    ]
+  },
+  "rooms": [
+    {
+      "id": "room_1",
+      "label": "room_1",
+      "polygon": [
+        [
+          1.0736,
+          0.5491
+        ],
+        [
+          1.0873,
+          3.1918
+        ],
+        [
+          -0.8507,
+          3.157
+        ],
+        [
+          -0.7711,
+          0.4601
+        ]
+      ],
+      "ceiling_height": {
+        "value": 2.4895948434849635,
+        "unit": "m",
+        "ci_low": 2.4636490680510774,
+        "ci_high": 2.5155406189188496,
+        "ci_level": 0.9,
+        "method": "lidar depth fusion, plane fit"
+      },
+      "floor_area": {
+        "value": 5.051695371278861,
+        "unit": "m2",
+        "ci_low": 4.844990742557721,
+        "ci_high": 5.2584,
+        "ci_level": 0.9,
+        "method": "lidar depth fusion, plane fit"
+      },
+      "walls": [
+        {
+          "id": "room_1/w0",
+          "start": [
+            1.0736,
+            0.5491
+          ],
+          "end": [
+            1.0873,
+            3.1918
+          ],
+          "length": {
+            "value": 2.642777105894985,
+            "unit": "m",
+            "ci_low": 2.586735660295761,
+            "ci_high": 2.6988185514942087,
+            "ci_level": 0.9,
+            "method": "lidar depth fusion, plane fit"
+          }
+        },
+        {
+          "id": "room_1/w1",
+          "start": [
+            1.0873,
+            3.1918
+          ],
+          "end": [
+            -0.8507,
+            3.157
+          ],
+          "length": {
+            "value": 1.9383338829142327,
+            "unit": "m",
+            "ci_low": 1.8937033363980467,
+            "ci_high": 1.9829644294304187,
+            "ci_level": 0.9,
+            "method": "lidar depth fusion, plane fit"
+          }
+        },
+        {
+          "id": "room_1/w2",
+          "start": [
+            -0.8507,
+            3.157
+          ],
+          "end": [
+            -0.7711,
+            0.4601
+          ],
+          "length": {
+            "value": 2.698066895944133,
+            "unit": "m",
+            "ci_low": 2.640889971212155,
+            "ci_high": 2.7552438206761107,
+            "ci_level": 0.9,
+            "method": "lidar depth fusion, plane fit"
+          }
+        },
+        {
+          "id": "room_1/w3",
+          "start": [
+            -0.7711,
+            0.4601
+          ],
+          "end": [
+            1.0736,
+            0.5491
+          ],
+          "length": {
+            "value": 1.8468967016883304,
+            "unit": "m",
+            "ci_low": 1.803984117696156,
+            "ci_high": 1.8898092856805049,
+            "ci_level": 0.9,
+            "method": "lidar depth fusion, plane fit"
+          }
+        }
+      ],
+      "openings": [],
+      "surfaces": [
+        {
+          "id": "room_1/w0",
+          "kind": "wall",
+          "wall_id": "room_1/w0",
+          "area": {
+            "value": 6.57944425531627,
+            "unit": "m2",
+            "ci_low": 6.423984734961478,
+            "ci_high": 6.734903775671061,
+            "ci_level": 0.9,
+            "method": "lidar depth fusion, plane fit"
+          },
+          "damage_regions": [
+            {
+              "id": "room_1/w0/d0",
+              "class": "crack",
+              "area": {
+                "value": 0.0066,
+                "unit": "m2",
+                "ci_low": -0.0016963683537036273,
+                "ci_high": 0.014896368353703627,
+                "ci_level": 0.9,
+                "method": "lidar depth fusion, plane fit"
+              },
+              "length": {
+                "value": 0.34,
+                "unit": "m",
+                "ci_low": 0.3152702178622393,
+                "ci_high": 0.36472978213776075,
+                "ci_level": 0.9,
+                "method": "lidar depth fusion, plane fit"
+              },
+              "polygon_uv": [
+                [
+                  1.5725,
+                  2.2275
+                ],
+                [
+                  1.5375,
+                  2.2075
+                ],
+                [
+                  1.5375,
+                  2.2475
+                ],
+                [
+                  1.5225,
+                  2.2575
+                ],
+                [
+                  1.4325,
+                  2.2525
+                ],
+                [
+                  1.4425,
+                  2.2725
+                ],
+                [
+                  1.4325,
+                  2.3375
+                ],
+                [
+                  1.4475,
+                  2.3225
+                ],
+                [
+                  1.4775,
+                  2.3225
+                ],
+                [
+                  1.4475,
+                  2.3175
+                ],
+                [
+                  1.4525,
+                  2.2725
+                ],
+                [
+                  1.5125,
+                  2.2725
+                ],
+                [
+                  1.5325,
+                  2.2625
+                ],
+                [
+                  1.5525,
+                  2.2775
+                ],
+                [
+                  1.5425,
+                  2.3225
+                ],
+                [
+                  1.5625,
+                  2.3225
+                ]
+              ],
+              "confidence": 1.0
+            },
+            {
+              "id": "room_1/w0/d1",
+              "class": "water_stain",
+              "area": {
+                "value": 0.10135000000000001,
+                "unit": "m2",
+                "ci_low": 0.08197816297089833,
+                "ci_high": 0.12072183702910169,
+                "ci_level": 0.9,
+                "method": "lidar depth fusion, plane fit"
+              },
+              "length": null,
+              "polygon_uv": [
+                [
+                  1.7325,
+                  0.0575
+                ],
+                [
+                  1.5375,
+                  0.0575
+                ],
+                [
+                  1.5375,
+                  0.1025
+                ],
+                [
+                  1.4575,
+                  0.1575
+                ],
+                [
+                  1.4575,
+                  0.2675
+                ],
+                [
+                  1.4975,
+                  0.3275
+                ],
+                [
+                  1.5125,
+                  0.4425
+                ],
+                [
+                  1.5975,
+                  0.5075
+                ],
+                [
+                  1.5975,
+                  0.5375
+                ],
+                [
+                  1.6775,
+                  0.5075
+                ],
+                [
+                  1.6025,
+                  0.5025
+                ],
+                [
+                  1.6175,
+                  0.4225
+                ],
+                [
+                  1.6475,
+                  0.4225
+                ],
+                [
+                  1.6875,
+                  0.4725
+                ],
+                [
+                  1.7325,
+                  0.4725
+                ]
+              ],
+              "confidence": 1.0
+            }
+          ]
+        },
+        {
+          "id": "room_1/w1",
+          "kind": "wall",
+          "wall_id": "room_1/w1",
+          "area": {
+            "value": 4.825666039855461,
+            "unit": "m2",
+            "ci_low": 4.70370246193253,
+            "ci_high": 4.947629617778392,
+            "ci_level": 0.9,
+            "method": "lidar depth fusion, plane fit"
+          },
+          "damage_regions": []
+        },
+        {
+          "id": "room_1/w2",
+          "kind": "wall",
+          "wall_id": "room_1/w2",
+          "area": {
+            "value": 6.717093431519995,
+            "unit": "m2",
+            "ci_low": 6.558464124533788,
+            "ci_high": 6.8757227385062025,
+            "ci_level": 0.9,
+            "method": "lidar depth fusion, plane fit"
+          },
+          "damage_regions": [
+            {
+              "id": "room_1/w2/d0",
+              "class": "crack",
+              "area": {
+                "value": 0.00585,
+                "unit": "m2",
+                "ci_low": -0.001529754725855122,
+                "ci_high": 0.013229754725855122,
+                "ci_level": 0.9,
+                "method": "lidar depth fusion, plane fit"
+              },
+              "length": {
+                "value": 0.295,
+                "unit": "m",
+                "ci_low": 0.2702842898859187,
+                "ci_high": 0.3197157101140813,
+                "ci_level": 0.9,
+                "method": "lidar depth fusion, plane fit"
+              },
+              "polygon_uv": [
+                [
+                  0.4975,
+                  0.8625
+                ],
+                [
+                  0.4825,
+                  0.8575
+                ],
+                [
+                  0.4725,
+                  0.8725
+                ],
+                [
+                  0.4225,
+                  0.8725
+                ],
+                [
+                  0.4125,
+                  0.8525
+                ],
+                [
+                  0.3975,
+                  0.8925
+                ],
+                [
+                  0.3625,
+                  0.9025
+                ],
+                [
+                  0.2675,
+                  0.8775
+                ],
+                [
+                  0.2675,
+                  0.8925
+                ],
+                [
+                  0.3375,
+                  0.9075
+                ],
+                [
+                  0.3925,
+                  0.9075
+                ],
+                [
+                  0.4175,
+                  0.8925
+                ],
+                [
+                  0.4675,
+                  0.8975
+                ],
+                [
+                  0.4775,
+                  0.9125
+                ],
+                [
+                  0.4975,
+                  0.9175
+                ]
+              ],
+              "confidence": 0.983
+            }
+          ]
+        },
+        {
+          "id": "room_1/w3",
+          "kind": "wall",
+          "wall_id": "room_1/w3",
+          "area": {
+            "value": 4.5980245049726545,
+            "unit": "m2",
+            "ci_low": 4.480934997969906,
+            "ci_high": 4.715114011975403,
+            "ci_level": 0.9,
+            "method": "lidar depth fusion, plane fit"
+          },
+          "damage_regions": [
+            {
+              "id": "room_1/w3/d0",
+              "class": "crack",
+              "area": {
+                "value": 0.018675,
+                "unit": "m2",
+                "ci_low": 0.0029101332923168258,
+                "ci_high": 0.034439866707683175,
+                "ci_level": 0.9,
+                "method": "lidar depth fusion, plane fit"
+              },
+              "length": {
+                "value": 0.775,
+                "unit": "m",
+                "ci_low": 0.7500325726093874,
+                "ci_high": 0.7999674273906127,
+                "ci_level": 0.9,
+                "method": "lidar depth fusion, plane fit"
+              },
+              "polygon_uv": [
+                [
+                  0.3925,
+                  0.7075
+                ],
+                [
+                  0.3925,
+                  0.7825
+                ],
+                [
+                  0.3725,
+                  0.7775
+                ],
+                [
+                  0.3975,
+                  0.9525
+                ],
+                [
+                  0.4125,
+                  0.9475
+                ],
+                [
+                  0.4025,
+                  0.7725
+                ],
+                [
+                  0.4325,
+                  0.7475
+                ],
+                [
+                  0.4225,
+                  0.8525
+                ],
+                [
+                  0.4675,
+                  0.8225
+                ],
+                [
+                  0.4925,
+                  1.0075
+                ],
+                [
+                  0.5125,
+                  0.9425
+                ],
+                [
+                  0.4925,
+                  0.8875
+                ],
+                [
+                  0.5025,
+                  0.7225
+                ],
+                [
+                  0.4825,
+                  0.7075
+                ],
+                [
+                  0.4625,
+                  0.7375
+                ]
+              ],
+              "confidence": 1.0
+            },
+            {
+              "id": "room_1/w3/d1",
+              "class": "crack",
+              "area": {
+                "value": 0.0045000000000000005,
+                "unit": "m2",
+                "ci_low": -0.0019062956161130023,
+                "ci_high": 0.010906295616113004,
+                "ci_level": 0.9,
+                "method": "lidar depth fusion, plane fit"
+              },
+              "length": {
+                "value": 0.275,
+                "unit": "m",
+                "ci_low": 0.2502899061579097,
+                "ci_high": 0.29971009384209035,
+                "ci_level": 0.9,
+                "method": "lidar depth fusion, plane fit"
+              },
+              "polygon_uv": [
+                [
+                  0.9875,
+                  2.0325
+                ],
+                [
+                  1.0475,
+                  2.0375
+                ],
+                [
+                  1.0725,
+                  2.0575
+                ],
+                [
+                  1.0675,
+                  2.0775
+                ],
+                [
+                  1.0725,
+                  2.0575
+                ],
+                [
+                  1.1025,
+                  2.0425
+                ],
+                [
+                  1.1475,
+                  2.0475
+                ],
+                [
+                  1.1625,
+                  2.0325
+                ],
+                [
+                  1.2175,
+                  2.0275
+                ],
+                [
+                  1.0925,
+                  2.0225
+                ]
+              ],
+              "confidence": 0.917
+            }
+          ]
+        },
+        {
+          "id": "room_1/floor",
+          "kind": "floor",
+          "wall_id": null,
+          "area": {
+            "value": 5.051695371278861,
+            "unit": "m2",
+            "ci_low": 4.844990742557721,
+            "ci_high": 5.2584,
+            "ci_level": 0.9,
+            "method": "lidar depth fusion, plane fit"
+          },
+          "damage_regions": []
+        },
+        {
+          "id": "room_1/ceiling",
+          "kind": "ceiling",
+          "wall_id": null,
+          "area": {
+            "value": 5.051695371278861,
+            "unit": "m2",
+            "ci_low": 4.844990742557721,
+            "ci_high": 5.2584,
+            "ci_level": 0.9,
+            "method": "lidar depth fusion, plane fit"
+          },
+          "damage_regions": [
+            {
+              "id": "room_1/ceiling/d0",
+              "class": "crack",
+              "area": {
+                "value": 0.0117,
+                "unit": "m2",
+                "ci_low": -0.0031001112930924366,
+                "ci_high": 0.02650011129309244,
+                "ci_level": 0.9,
+                "method": "lidar depth fusion, plane fit"
+              },
+              "length": {
+                "value": 0.77,
+                "unit": "m",
+                "ci_low": 0.7450363398597709,
+                "ci_high": 0.7949636601402291,
+                "ci_level": 0.9,
+                "method": "lidar depth fusion, plane fit"
+              },
+              "polygon_uv": [
+                [
+                  0.1318,
+                  1.7426
+                ],
+                [
+                  0.2668,
+                  1.7126
+                ],
+                [
+                  0.3368,
+                  1.6276
+                ],
+                [
+                  0.2918,
+                  1.6276
+                ],
+                [
+                  0.3018,
+                  1.6576
+                ],
+                [
+                  0.2718,
+                  1.6676
+                ],
+                [
+                  0.2568,
+                  1.6126
+                ],
+                [
+                  0.2268,
+                  1.6076
+                ],
+                [
+                  0.2368,
+                  1.5776
+                ],
+                [
+                  0.3018,
+                  1.5926
+                ],
+                [
+                  0.2668,
+                  1.5776
+                ],
+                [
+                  0.2618,
+                  1.5526
+                ],
+                [
+                  0.2168,
+                  1.5776
+                ],
+                [
+                  0.1318,
+                  1.5426
+                ],
+                [
+                  0.2218,
+                  1.5876
+                ],
+                [
+                  0.2018,
+                  1.6726
+                ],
+                [
+                  0.2268,
+                  1.6926
+                ],
+                [
+                  0.2118,
+                  1.7176
+                ],
+                [
+                  0.1518,
+                  1.7226
+                ],
+                [
+                  0.1668,
+                  1.6726
+                ],
+                [
+                  0.1368,
+                  1.6876
+                ]
+              ],
+              "confidence": 1.0
+            }
+          ]
+        }
+      ],
+      "concealed_flags": [
+        {
+          "id": "room_1/f0",
+          "rule_id": "R2_BASE_OF_WALL_MOISTURE",
+          "rule": "Moisture reaching the base of a wall (within 0.15 m of the floor)",
+          "surface_id": "room_1/w0",
+          "evidence": [
+            "room_1/w0/d1"
+          ],
+          "suspected": "rising damp or a plumbing leak behind the skirting; subfloor may be wet",
+          "severity": "medium"
+        }
+      ],
+      "perimeter": {
+        "value": 9.12607458644168,
+        "unit": "m",
+        "ci_low": 9.079977814612267,
+        "ci_high": 9.172171358271093,
+        "ci_level": 0.9,
+        "method": "lidar depth fusion, plane fit"
+      }
+    }
+  ],
+  "adjacency": [],
+  "property": {
+    "room_count": 1,
+    "footprint_area": {
+      "value": 5.051695371278861,
+      "unit": "m2",
+      "ci_low": 4.844990742557721,
+      "ci_high": 5.2584,
+      "ci_level": 0.9,
+      "method": "lidar depth fusion, plane fit"
+    },
+    "extent_x": {
+      "value": 1.938,
+      "unit": "m",
+      "ci_low": 1.9189734727880052,
+      "ci_high": 1.9570265272119947,
+      "ci_level": 0.9,
+      "method": "lidar depth fusion, plane fit"
+    },
+    "extent_y": {
+      "value": 2.7317,
+      "unit": "m",
+      "ci_low": 2.710433647826883,
+      "ci_high": 2.752966352173117,
+      "ci_level": 0.9,
+      "method": "lidar depth fusion, plane fit"
+    }
+  },
+  "scope": [
+    {
+      "id": "room_1/s0",
+      "surface_id": "room_1/w0",
+      "code": "PLS-CRACK",
+      "description": "Rake out, fill, tape and sand crack",
+      "quantity": {
+        "value": 0.34,
+        "unit": "m",
+        "ci_low": 0.3152702178622393,
+        "ci_high": 0.36472978213776075,
+        "ci_level": 0.9,
+        "method": "lidar depth fusion, plane fit"
+      },
+      "count": null,
+      "reason": [
+        "room_1/w0/d0"
+      ]
+    },
+    {
+      "id": "room_1/s1",
+      "surface_id": "room_1/w0",
+      "code": "PRM-STAIN",
+      "description": "Stain-blocking primer over the stain and a margin",
+      "quantity": {
+        "value": 0.15202500000000002,
+        "unit": "m2",
+        "ci_low": 0.12296724445634749,
+        "ci_high": 0.18108275554365255,
+        "ci_level": 0.9,
+        "method": "damage extent x margin"
+      },
+      "count": null,
+      "reason": [
+        "room_1/w0/d1"
+      ]
+    },
+    {
+      "id": "room_1/s2",
+      "surface_id": "room_1/w0",
+      "code": "PNT-WALL",
+      "description": "Repaint wall (full surface, net of openings)",
+      "quantity": {
+        "value": 6.57944425531627,
+        "unit": "m2",
+        "ci_low": 6.423984734961478,
+        "ci_high": 6.734903775671061,
+        "ci_level": 0.9,
+        "method": "lidar depth fusion, plane fit"
+      },
+      "count": null,
+      "reason": [
+        "room_1/w0/d0",
+        "room_1/w0/d1"
+      ]
+    },
+    {
+      "id": "room_1/s3",
+      "surface_id": "room_1/w0",
+      "code": "INS-MOIST",
+      "description": "Moisture meter and thermal survey; open up if readings are high",
+      "quantity": {
+        "value": 6.57944425531627,
+        "unit": "m2",
+        "ci_low": 6.423984734961478,
+        "ci_high": 6.734903775671061,
+        "ci_level": 0.9,
+        "method": "lidar depth fusion, plane fit"
+      },
+      "count": 1,
+      "reason": [
+        "room_1/f0",
+        "room_1/w0/d1"
+      ]
+    },
+    {
+      "id": "room_1/s4",
+      "surface_id": "room_1/w2",
+      "code": "PLS-CRACK",
+      "description": "Rake out, fill, tape and sand crack",
+      "quantity": {
+        "value": 0.295,
+        "unit": "m",
+        "ci_low": 0.2702842898859187,
+        "ci_high": 0.3197157101140813,
+        "ci_level": 0.9,
+        "method": "lidar depth fusion, plane fit"
+      },
+      "count": null,
+      "reason": [
+        "room_1/w2/d0"
+      ]
+    },
+    {
+      "id": "room_1/s5",
+      "surface_id": "room_1/w2",
+      "code": "PNT-WALL",
+      "description": "Repaint wall (full surface, net of openings)",
+      "quantity": {
+        "value": 6.717093431519995,
+        "unit": "m2",
+        "ci_low": 6.558464124533788,
+        "ci_high": 6.8757227385062025,
+        "ci_level": 0.9,
+        "method": "lidar depth fusion, plane fit"
+      },
+      "count": null,
+      "reason": [
+        "room_1/w2/d0"
+      ]
+    },
+    {
+      "id": "room_1/s6",
+      "surface_id": "room_1/w3",
+      "code": "PLS-CRACK",
+      "description": "Rake out, fill, tape and sand crack",
+      "quantity": {
+        "value": 0.775,
+        "unit": "m",
+        "ci_low": 0.7500325726093874,
+        "ci_high": 0.7999674273906127,
+        "ci_level": 0.9,
+        "method": "lidar depth fusion, plane fit"
+      },
+      "count": null,
+      "reason": [
+        "room_1/w3/d0"
+      ]
+    },
+    {
+      "id": "room_1/s7",
+      "surface_id": "room_1/w3",
+      "code": "PLS-CRACK",
+      "description": "Rake out, fill, tape and sand crack",
+      "quantity": {
+        "value": 0.275,
+        "unit": "m",
+        "ci_low": 0.2502899061579097,
+        "ci_high": 0.29971009384209035,
+        "ci_level": 0.9,
+        "method": "lidar depth fusion, plane fit"
+      },
+      "count": null,
+      "reason": [
+        "room_1/w3/d1"
+      ]
+    },
+    {
+      "id": "room_1/s8",
+      "surface_id": "room_1/w3",
+      "code": "PNT-WALL",
+      "description": "Repaint wall (full surface, net of openings)",
+      "quantity": {
+        "value": 4.5980245049726545,
+        "unit": "m2",
+        "ci_low": 4.480934997969906,
+        "ci_high": 4.715114011975403,
+        "ci_level": 0.9,
+        "method": "lidar depth fusion, plane fit"
+      },
+      "count": null,
+      "reason": [
+        "room_1/w3/d0",
+        "room_1/w3/d1"
+      ]
+    },
+    {
+      "id": "room_1/s9",
+      "surface_id": "room_1/ceiling",
+      "code": "PLS-CRACK",
+      "description": "Rake out, fill, tape and sand crack",
+      "quantity": {
+        "value": 0.77,
+        "unit": "m",
+        "ci_low": 0.7450363398597709,
+        "ci_high": 0.7949636601402291,
+        "ci_level": 0.9,
+        "method": "lidar depth fusion, plane fit"
+      },
+      "count": null,
+      "reason": [
+        "room_1/ceiling/d0"
+      ]
+    },
+    {
+      "id": "room_1/s10",
+      "surface_id": "room_1/ceiling",
+      "code": "PNT-CEIL",
+      "description": "Repaint ceiling",
+      "quantity": {
+        "value": 5.051695371278861,
+        "unit": "m2",
+        "ci_low": 4.844990742557721,
+        "ci_high": 5.2584,
+        "ci_level": 0.9,
+        "method": "lidar depth fusion, plane fit"
+      },
+      "count": null,
+      "reason": [
+        "room_1/ceiling/d0"
+      ]
+    }
+  ],
+  "drift": {
+    "method": "4-DoF pose graph with ICP loop closures, then plane-anchored bundle adjustment",
+    "enabled": true,
+    "residual_before_m": null,
+    "residual_after_m": null,
+    "notes": [
+      "pose graph: 8 fragments of 3 s, 0 loop closures",
+      "no loop closures found; drift left uncorrected (capture did not revisit any area)",
+      "plane adjustment: 8 fragments x 6 planes, 6990 point residuals; median fragment shift 0.9 cm, max 6.3 cm",
+      "plane adjustment: 8 fragments x 6 planes, 7095 point residuals; median fragment shift 1.0 cm, max 2.2 cm",
+      "plane adjustment: 8 fragments x 6 planes, 7114 point residuals; median fragment shift 0.7 cm, max 1.8 cm"
+    ]
+  },
+  "calibration": {
+    "ci_level": 0.9,
+    "method": "split-conformal per tier and quantity",
+    "table": "lidar-conformal-7captures"
+  },
+  "timing_s": {
+    "ingest": 0.0,
+    "drift": 1.41,
+    "reconstruct": 1.62,
+    "stitch": 7.94,
+    "measure": 0.04,
+    "openings": 0.26,
+    "damage": 4.98,
+    "assemble": 0.0,
+    "total": 16.72
+  }
+}
