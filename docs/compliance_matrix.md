@@ -44,7 +44,7 @@ and held-out visits); it exercises the LiDAR tier, not the photo or video tiers.
 
 | Requirement | Where | Evidence | Status |
 |---|---|---|---|
-| Head-to-head vs a consumer app on 2 rooms (≥ 70% beat or tie) | `benchmark/head_to_head/` | bathroom run: Pointorama (point-cloud tool, automatic) on the same raw iPad LiDAR cloud, scored against laser truth: ours beats or ties 8/8 (7/8 on raw depth) | 1 of 2 rooms; a professional tool on an uploaded cloud, not a consumer app's own scan (no phone) |
+| Head-to-head vs a consumer app on 2 rooms (≥ 70% beat or tie) | `benchmark/head_to_head/` | 2 rooms: Pointorama (point-cloud tool, automatic) on the same raw iPad LiDAR clouds, scored against laser truth: ours beats or ties 14/15 as shipped; 10/15 (67%) with our depth calibration off | met as shipped, not on identical raw input; a professional tool on an uploaded cloud, not a consumer app's own scan (no phone) |
 | Fix loop: declaration, regenerable before/after, diff | `docs/fix_loop.md`, `benchmark/fix_loop/` | ten regenerable entries, three from real captures, (each one commit, same capture both sides, one scorer; tables in `benchmark/fix_loop/results/`) + history | done |
 | Commit as you work | git history | small commits with the measured before/after in the message | done |
 | Walk-in test: every tier runs cold | `scripts/setup.sh`, `scripts/walk_in.sh` | rehearsed on a fresh clone from GitHub: setup 1.5 min (weights cached), then every tier cold, one command each (LiDAR 6.4 min, all gates pass; video 5 min; photo 31 s) | done (synthetic); on our own iPhone captures pending |
