@@ -254,7 +254,31 @@ def samples_section(bench: Path) -> list[str]:
                      "footprint (m²)": f"{plan['property']['footprint_area']['value']:.1f}",
                      "ceiling not seen in": f"{unseen} rooms", "run (s)": f"{timing.get('total', 0):.0f}",
                      "of which damage (s)": f"{timing.get('damage', 0):.0f}"})
-    return lines + _table(rows, "sample") + [""]
+    lines += _table(rows, "sample") + [""]
+    rows = []
+    from roomscope.benchmark.evaluate import _overlap_area
+    for path in plans:
+        off = bench / "samples_nodrift" / path.parent.name / "plan.json"
+        if not off.exists():
+            continue
+        on_plan, off_plan = json.loads(path.read_text()), json.loads(off.read_text())
+        row = {"sample": path.parent.name}
+        for label, plan in (("on", on_plan), ("off", off_plan)):
+            row[f"rooms ({label})"] = len(plan["rooms"])
+            row[f"connections ({label})"] = len(plan["adjacency"])
+            row[f"footprint m² ({label})"] = f"{plan['property']['footprint_area']['value']:.1f}"
+            row[f"overlap m² ({label})"] = f"{_overlap_area([np.array(r['polygon']) for r in plan['rooms']]):.2f}"
+        rows.append(row)
+    if rows:
+        lines += ["Drift correction on and off on the same real recordings (no truth, so the comparison is between the two",
+                  "runs: room count, connections, footprint and rooms overlapping each other):", ""]
+        lines += _table(rows, "sample") + [""]
+        if len(rows) >= 2:
+            spread = {k: max(float(r[f"footprint m² ({k})"]) for r in rows) - min(float(r[f"footprint m² ({k})"]) for r in rows)
+                      for k in ("on", "off")}
+            lines += [f"Captures of the same flat agree on its footprint to {spread['on']:.1f} m² with drift correction and "
+                      f"{spread['off']:.1f} m² without.", ""]
+    return lines
 
 
 def calibration_section(bench: Path) -> list[str]:
