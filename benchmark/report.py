@@ -255,6 +255,31 @@ def head_to_head_section() -> list[str]:
     return lines
 
 
+def timing_section(bench: Path) -> list[str]:
+    groups: dict[str, list[float]] = {}
+    for plan_path in sorted((bench / "real").glob("*/plan.json")) + sorted((bench / "replica").glob("*_model/plan.json")):
+        plan = json.loads(plan_path.read_text())
+        source = "real recordings" if plan_path.parent.parent.name == "real" else "scanned rooms"
+        groups.setdefault(f"{plan['capture']['tier']}, {source}", []).append(plan["timing_s"]["total"])
+    rows = [{"tier, captures": name, "runs": len(times), "median (s)": f"{np.median(times):.0f}",
+             "max (s)": f"{np.max(times):.0f}",
+             "model outputs": "none (no model)" if name.startswith("lidar") else "replayed from cache"}
+            for name, times in sorted(groups.items())]
+    lines = ["## Timing", "",
+             "Cold, one process per capture, on an Apple M2 with 16 GB. The benchmark's photo and video runs replay",
+             "cached model outputs, so their times below are the geometry alone:", ""]
+    lines += _table(rows, "tier, captures") + [""]
+    live = _load(bench / "timing_live.json")
+    if live:
+        lines += ["Live path (`benchmark/time_live.py`, `ROOMSCOPE_CACHE=off`: every depth and multi-view inference runs,",
+                  "as on a capture never seen before):", ""]
+        lines += _table([{"capture": r["capture"], "frames used": r["frames"], "total (s)": f"{r['timing_s']['total']:.0f}",
+                          "reconstruct (s)": f"{r['timing_s'].get('reconstruct', 0):.0f}"} for r in live], "capture") + [""]
+        lines += ["Each is one room; model time grows with the number of rooms (photo) or frames (video).", ""]
+    lines += ["LiDAR runs on the assessors' sample captures, with recording length, are in the next section.", ""]
+    return lines
+
+
 def samples_section(bench: Path) -> list[str]:
     plans = sorted((bench / "samples").glob("*/plan.json"))
     lines = ["## Assessors' sample captures", "",
@@ -353,7 +378,7 @@ def main() -> int:
     if provenance.exists():
         lines += provenance.read_text().strip().split("\n") + [""]
     lines += (lidar_section(bench) + flat_section(bench) + replica_section(bench) + depth_section(bench)
-              + damage_section(bench) + real_section(bench) + head_to_head_section() + samples_section(bench) + calibration_section(bench))
+              + damage_section(bench) + real_section(bench) + head_to_head_section() + timing_section(bench) + samples_section(bench) + calibration_section(bench))
     Path(args.out).write_text("\n".join(lines) + "\n")
     print(f"wrote {args.out}")
     return 0
