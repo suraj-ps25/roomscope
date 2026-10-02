@@ -138,6 +138,7 @@ rooms come out as their bounding rectangle, a stated limitation.
 | video | depth model's per-scene scale | sd 5.9%, −14% to +4% | carried in the interval, not removable by averaging | ×8.34; 88% |
 | video | geometry alone (true depth) | worst wall 1.9% median | turns + multi-view | (in the above) |
 | photo | depth model's per-scene scale | as video | carried in the interval; views joined by matched 3D points (§5) | ×2.11; 92% |
+| photo, ≤ 3 photos a room | wall placement, not scale | walls median 39 cm off | separate conformal table keyed on `quality.views` | ×4.77; 91% |
 
 `build.py` propagates each measurement's uncertainty:
 - wall length from the neighbouring walls' fit sigmas through the corner intersections;
@@ -269,5 +270,11 @@ entry regenerates from their two commits on an identical capture with one scorer
   (`fix_loop.md`): the depth model's scale varies by 6.7% from scene to scene on real
   iPad frames, and no global correction removes a per-scene spread.
 - **Photo/video layouts are rectangles.** L-shaped rooms read as their bounding rectangle.
+- **Thin photo input** (2–3 photos a room) is honest, not accurate: rooms come out
+  unconnected and walls tens of centimetres off; such rooms carry their own, 2.3× wider
+  interval table (91% left-out coverage).
+- **Low light** (35% exposure, 3× noise, simulated): LiDAR geometry is unchanged but damage
+  recall drops 3/3 → 0/3; video keeps one room of four; photo degrades to 27% walls with
+  52% coverage, the one place intervals still overstate confidence.
 - **Damage** recall is validated on synthetic staging only (3/3 at the staged places).
   Real undamaged rooms still report 2–11 false regions.

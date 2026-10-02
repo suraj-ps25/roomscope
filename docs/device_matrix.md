@@ -42,6 +42,12 @@ passing tests: 1.5–2.5 min with model weights cached (the first download is ~7
 | Drift ablation | off: walls out by up to 1.8 m, adjacency wrong on all three | – | no long trajectory | no trajectory |
 | Metric scale from | LiDAR depth | LiDAR depth, corrected by a measured device scale (iPad Pro: ×1.0088) | MoGe-2: per-scene bias, measured −14% to +4% (5.9% spread) | MoGe-2, same |
 
+**Low light** (the synthetic flat at 35% exposure with three times the sensor noise, every
+tier): LiDAR geometry is identical (walls, ceilings, 9/9 openings, adjacency) but damage
+recall falls 3/3 → 0/3; video finds 1 room of 4; photo walls go from 13% to 27% off and
+interval coverage from 96% to 52%. The protocol's "lights on" is load-bearing for the image
+tiers and for damage at every tier.
+
 **What limits each tier.**
 - **LiDAR:** on synthetic captures, the sensor's depth scale bias between captures and
   window jambs seen through glass. On real iPad recordings: the depth's own ~1% scale and
