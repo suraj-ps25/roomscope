@@ -13,7 +13,7 @@ and held-out visits); it exercises the LiDAR tier, not the photo or video tiers.
 
 | Requirement | Where | Evidence | Status |
 |---|---|---|---|
-| Capture route: stock apps + one-page protocol (Route 2) | `docs/capture_protocol.md` | numbered steps per tier, hand-off, failure cases | done |
+| Capture route: stock apps + one-page protocol (Route 2) | `docs/capture_protocol.md` (one page, 517 words), `docs/capture_notes.md` | what to install, how to walk, how long, what to avoid, hand-off, per tier; failure cases in the notes | done |
 | Photo tier: stills per room, any iPhone 15+, one stitched plan | `io/photos.py`, `tiers/photo.py`, `geometry/registration.py` | corner shots + doorway threshold pairs; registration by matched 3D points; rooms joined through the shared threshold | done |
 | Video tier: one handheld clip, any iPhone 15+ | `io/video.py`, `tiers/video.py` | rooms from on-the-spot turns; lens self-calibrated from the turns; visual compass for headings | done |
 | LiDAR tier: depth + poses on Pro devices | `io/stray.py`, `tiers/lidar.py` | Stray Scanner ingest → pose graph → plane-anchored adjustment | done |
