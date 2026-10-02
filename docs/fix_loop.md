@@ -315,6 +315,25 @@ at 0.2 s a view; Depth Pro at several seconds.
   coverage checked leaving one property out. Rooms with more photos keep today's table.
 - **Predicted:** left-out coverage of thin-input walls ≥ 85% (from 68–77%), at intervals
   roughly two to three times today's on those rooms; rooms with 4+ photos unchanged.
+- **Shipped:** `quality.views` on every photo room, `calibration/photo_few_views.json`
+  (rooms of ≤ 3 photos), fitted by `benchmark/thin_photos.py` + `roomscope calibrate
+  --max-views 3` on 36 thin variants (9 captures × {2, 3} photos × 2 selections).
+
+| thin photo input (≤ 3 photos a room) | predicted | before | after |
+|---|---|---|---|
+| wall interval multiplier | 2–3× today's | ×2.11 | **×4.77** (2.3×) |
+| left-out wall coverage, all 36 thin variants | ≥ 85% | 83% mean (main table) | **91%** |
+| left-out ceiling / area coverage | – | – | 94% / 94% |
+| the flat at 2 photos a room (the case that started this) | – | 68–77% | covered (one check: 5 of 5) |
+| rooms with 4+ photos | unchanged | – | unchanged (main table) |
+
+- **Where the declaration was loose:** "from 68–77%" was the flat alone. Across every thin
+  variant the main table already covered 83%, because single scanned rooms carry a wide
+  per-room scale sigma; the flat's rooms were the ones left bare. The direction and the size
+  of the widening held.
+- **Not fixed by this:** thin input is honest now, not accurate. At 2 photos a room the
+  rooms still come out unconnected and walls tens of centimetres off (wall median error
+  39 cm across the thin variants); the intervals say so.
 
 ### A fix that was not shipped: a ceiling-height scale prior for photo and video
 
