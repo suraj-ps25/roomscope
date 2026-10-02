@@ -245,14 +245,40 @@ A recording's raw LiDAR (device poses, nothing of ours applied) given as a point
 automatic room tools, unedited, and scored against the laser truth with `benchmark/head_to_head/score.py`.
 *Ours, raw depth* runs with our device depth calibration off, so both sides see identical input.
 
+Recording 42897678, ours:
+
+```
+Pointorama web app, automatic Auto Floor + Magic Room, 2026-10-02: 86% of 7 quantities beaten or tied (target 70%) -> PASS
+  large_room wall 0     truth 4.385  app   0.80 cm  ours   5.41 cm  loss
+  large_room wall 1     truth 3.530  app  67.67 cm  ours   2.99 cm  win
+  large_room wall 5     truth 4.811  app   2.42 cm  ours   0.39 cm  win
+  large_room ceiling    truth 2.338  app   0.87 cm  ours   0.43 cm  tie
+  large_room floor area truth 18.501  app   2.59 m2  ours   0.21 m2  win
+  large_room window 0   truth 1.450  app    nan cm  ours   1.00 cm  win
+  large_room door 1     truth 0.720  app    nan cm  ours   5.42 cm  win
+```
+
+Recording 42897678, ours, raw depth:
+
+```
+Pointorama web app, automatic Auto Floor + Magic Room, 2026-10-02: 57% of 7 quantities beaten or tied (target 70%) -> FAIL
+  large_room wall 0     truth 4.385  app   0.80 cm  ours   1.80 cm  loss
+  large_room wall 1     truth 3.530  app  67.67 cm  ours   1.04 cm  win
+  large_room wall 5     truth 4.811  app   2.42 cm  ours   4.04 cm  loss
+  large_room ceiling    truth 2.338  app   0.87 cm  ours   1.41 cm  loss
+  large_room floor area truth 18.501  app   2.59 m2  ours   0.03 m2  win
+  large_room window 0   truth 1.450  app    nan cm  ours   1.00 cm  win
+  large_room door 1     truth 0.720  app    nan cm  ours   6.26 cm  win
+```
+
 Recording 47429914, ours:
 
 ```
 Pointorama web app, automatic Auto Floor + Magic Room, 2026-10-02: 100% of 8 quantities beaten or tied (target 70%) -> PASS
-  bathroom   wall 0     truth 2.721  app  91.76 cm  ours   3.79 cm  win
-  bathroom   wall 1     truth 1.983  app   3.12 cm  ours   2.12 cm  win
-  bathroom   wall 2     truth 2.716  app  14.85 cm  ours   0.46 cm  win
-  bathroom   wall 3     truth 1.888  app  67.81 cm  ours   2.12 cm  win
+  bathroom   wall 0     truth 2.721  app   5.63 cm  ours   3.79 cm  win
+  bathroom   wall 1     truth 1.983  app   3.16 cm  ours   2.12 cm  win
+  bathroom   wall 2     truth 2.716  app  15.05 cm  ours   0.46 cm  win
+  bathroom   wall 3     truth 1.888  app  23.59 cm  ours   2.12 cm  win
   bathroom   ceiling    truth 2.515  app   1.95 cm  ours   0.69 cm  win
   bathroom   floor area truth 5.258  app   0.42 m2  ours   0.04 m2  win
   bathroom   window 0   truth 0.640  app    nan cm  ours   6.04 cm  win
@@ -262,11 +288,11 @@ Pointorama web app, automatic Auto Floor + Magic Room, 2026-10-02: 100% of 8 qua
 Recording 47429914, ours, raw depth:
 
 ```
-Pointorama web app, automatic Auto Floor + Magic Room, 2026-10-02: 88% of 8 quantities beaten or tied (target 70%) -> PASS
-  bathroom   wall 0     truth 2.721  app  91.76 cm  ours   6.43 cm  win
-  bathroom   wall 1     truth 1.983  app   3.12 cm  ours   3.78 cm  loss
-  bathroom   wall 2     truth 2.716  app  14.85 cm  ours   2.44 cm  win
-  bathroom   wall 3     truth 1.888  app  67.81 cm  ours   0.71 cm  win
+Pointorama web app, automatic Auto Floor + Magic Room, 2026-10-02: 75% of 8 quantities beaten or tied (target 70%) -> PASS
+  bathroom   wall 0     truth 2.721  app   5.63 cm  ours   6.43 cm  loss
+  bathroom   wall 1     truth 1.983  app   3.16 cm  ours   3.78 cm  loss
+  bathroom   wall 2     truth 2.716  app  15.05 cm  ours   2.44 cm  win
+  bathroom   wall 3     truth 1.888  app  23.59 cm  ours   0.71 cm  win
   bathroom   ceiling    truth 2.515  app   1.95 cm  ours   1.59 cm  tie
   bathroom   floor area truth 5.258  app   0.42 m2  ours   0.13 m2  win
   bathroom   window 0   truth 0.640  app    nan cm  ours  10.38 cm  win
