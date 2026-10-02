@@ -89,8 +89,9 @@ to the tool's.
   cleanly it is as accurate as we are: its large-room long wall is within 0.8 cm.
   Our margin on wall lengths comes partly from the device depth calibration, which a
   tool given only the cloud can't apply.
-- The bathroom is from a **dev** visit, one of the two the depth calibration was fitted
-  on; the large room is **held out**.
+- The bathroom is from one of the two visits the depth calibration was fitted on; the
+  large room's visit was not used for it (it was held out then, and is dev now only for
+  the later sliver-wall fix).
 
 **Caveats.** Pointorama is a professional point-cloud tool, not the consumer phone app
 the brief names, and it saw the iPad's cloud rather than making its own scan. In the second
