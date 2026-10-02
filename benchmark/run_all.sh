@@ -71,8 +71,9 @@ echo "== live timing (photo and video with the model-output cache off)"
 [[ -f $OUT/timing_live.json ]] || $PY benchmark/time_live.py --out "$OUT/timing_live.json"
 
 echo "== interval calibration (split conformal, leave-one-property-out coverage)"
-lidar_runs=(); for s in 0 1 2; do lidar_runs+=("$OUT/lidar/flat_a_lidar_d1_s${s}_corrected/plan.json:data/captures/simbench/flat_a_lidar_d1_s$s/ground_truth.json"); done
-# Real recordings calibrate only from the dev visits; the held-out visits never do.
+# LiDAR intervals are fitted on real recordings only, from the dev visits (the held-out
+# visit never calibrates): synthetic captures' near-perfect walls would pull them narrow.
+lidar_runs=()
 while read -r visit; do
   for video in $(grep -l "^$visit$" data/public/arkitscenes/*/visit.txt | xargs -n1 dirname | xargs -n1 basename); do
     [[ -f $OUT/real/$video/metrics.json ]] && lidar_runs+=("$OUT/real/$video/plan.json:benchmark/ground_truth/arkitscenes_$visit.yaml")
