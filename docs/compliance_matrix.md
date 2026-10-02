@@ -55,12 +55,12 @@ and held-out visits); it exercises the LiDAR tier, not the photo or video tiers.
 |---|---|---|---|
 | 1 | Compliance matrix | `docs/compliance_matrix.md` | this file |
 | 2 | Capture route + device matrix | `docs/capture_protocol.md`, `docs/device_matrix.md` | done |
-| 3 | Repo, README to running in < 15 min, one command per capture | `README.md`, `scripts/setup.sh` | done |
+| 3 | Repo, README to running in < 15 min, one command per capture | `README.md`, `scripts/setup.sh` | done: fresh clone with empty caches to a first LiDAR plan in 82 s; photo/video weights add ~3.5 min of download |
 | 4 | Reproduction bundle: raw → every number; cached model outputs replay; live path runs | `benchmark/run_all.sh`, `models/cache.py` | done |
-| 5 | Benchmark report | `docs/benchmark_report.md` (generated) | done: synthetic, scanned rooms, real LiDAR (dev + held-out) |
+| 5 | Benchmark report | `docs/benchmark_report.md` (generated) | done: gates at all three tiers (synthetic, scanned rooms, real dev + held-out), repeatability tables, head-to-head table, timing (cached and live) |
 | 6 | Fix-loop bundle | `docs/fix_loop.md`, `benchmark/fix_loop/` | done |
-| 7 | Technical report (≤ 6 pages) | `docs/technical_report.md` | done |
-| 8 | Raw benchmark data | `data/captures/` (generated, not in git), `scripts/fetch_replica.sh`, `benchmark/real/fetch_arkitscenes.py`; laser truth in `benchmark/ground_truth/` | done (synthetic, scanned, real LiDAR) |
+| 7 | Technical report (≤ 6 pages) | `docs/technical_report.md` | done: 5 A4 pages rendered; architecture, tiers + device matrix, drift, error budget (§6), calibration, fix loop, failure modes |
+| 8 | Raw benchmark data | app exports: `benchmark/head_to_head/results/` (Pointorama DXF/IFC); `data/captures/` (generated, not in git), `scripts/fetch_replica.sh`, `benchmark/real/fetch_arkitscenes.py`; laser truth in `benchmark/ground_truth/` | done (synthetic, scanned, real LiDAR) |
 
 ## Constraints
 
