@@ -16,6 +16,7 @@ room report; Polycam: the room's measurement overlay or DXF), keyed like ground 
 
 A quantity is a win when our error is smaller, a tie when both are within TIE_M of each
 other (TIE_M2 for area); the brief asks for >= 70% of quantities beaten or tied. A
+wall whose length the laser didn't measure end to end is left out. A
 ground-truth opening the app didn't report is scored as found by neither, found by us
 only, so a tool that reports no openings is not let off them.
 """
@@ -49,7 +50,10 @@ def compare(app: dict, plan: dict, truth: dict) -> dict:
             continue
         ours_walls = [w["length"]["value"] for w in ours["walls"]]
         shift = _cyclic_alignment(ours_walls, gt["walls"], [], [])
+        measured_end_to_end = gt.get("survey", {}).get("length_measured") or [True] * len(gt["walls"])
         for k, true_length in enumerate(gt["walls"]):
+            if not measured_end_to_end[k]:
+                continue
             mine = ours_walls[(k + shift) % len(ours_walls)] if shift is not None else np.nan
             rows.append((room_id, f"wall {k}", true_length, measured["walls"][k], mine))
         rows.append((room_id, "ceiling", gt["ceiling_height"], measured.get("ceiling_height", np.nan),
