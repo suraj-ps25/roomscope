@@ -91,7 +91,7 @@ within 2 cm) is attributed, from the per-opening detail the evaluator writes
 
 | cause | failures | where |
 |---|---|---|
-| width off, **a repeatable bias on one door** | 3 | the 0.72 m door of visit 423441 reads +5.4, +6.2 and +6.7 cm in three recordings |
+| width off, **a repeatable bias on one door, traced to the truth** (below) | 3 | the 0.72 m door of visit 423441 reads +5.4, +6.2 and +6.7 cm in three recordings |
 | width off, no common sign | 5 | windows −3, −5, −6, +5, +6 cm |
 | width off by under 0.5 cm past the gate | 2 | doors +2.2 and +2.4 cm |
 | plan's wall count differs from the survey's, so openings can't be placed | 3 phantoms | 42897688 (8 and 17 walls against 6 and 4) |
@@ -104,17 +104,29 @@ within 2 cm) is attributed, from the per-opening detail the evaluator writes
 
 **What the declaration got wrong.** Section 2 called the width errors "both signs, so not
 a bias" and put them down to depth resolution. That holds for windows only. The 0.72 m
-door is 5–7 cm wide in every recording of it, so for that door the error is systematic,
-and 256×192 depth noise would not repeat to within 1.3 cm. A likely cause, not yet
-tested: our edges land on the door's frame (trim) while the laser survey measures
-between the jamb faces. If so, the fix is a definition (which surface is the jamb), not
-better depth, and it would pass those 3 at once.
+door of 423441 is 5–7 cm wide in every recording of it, and 256×192 depth noise would not
+repeat to within 1.3 cm.
+
+**That bias was then traced, and it is in the truth, not the pipeline.** A first guess
+(our edges on the door's trim) was checked and is wrong: a slice of the iPad cloud through
+the door shows no trim, and the door sits at a corner with a 45 cm reveal on its other
+side. The laser's elevation of that wall (`docs/real/laser_423441_room_1_walls.png`,
+wall 1) shows the cause: the door leaf, open into the room, stands in the doorway beside
+the left jamb as a full-height strip about 5 cm thick. The survey counts it as an
+obstruction and measures from the leaf to the right jamb (0.72 m); we measure jamb to
+jamb (0.78 m), with most of the extra on the leaf's side (4.5 cm against 1.8 cm). The
+measuring protocol defines the width as "clear width between the jambs"
+(`benchmark/README.md`), so for this door the survey, not the plan, is off. The other two
+doors (+2.2, +2.4 cm) have no leaf in the doorway; theirs is ordinary measurement error.
+The truth has not been changed: correcting a ruler after seeing the scores would need its
+own declaration.
 
 **Why the movement was small.** The fix addressed 4 of the 18 detection failures, as
 predicted, and none of the width failures, as predicted. Of what is left, 10 are widths
 and 14 are detection or placement, spread over seven separate causes; no single fix
-reaches more than 3. Getting from 8% to the 85% gate needs the width bias, the
-wall-sequence mismatches and recordings that film every door, together.
+reaches more than 3, and the largest of them is a truth artefact rather than a pipeline
+error. Getting from 8% to the 85% gate needs window edges (±3–6 cm), the wall-sequence
+mismatches and recordings that film every door, together.
 
 **Measured since, not part of this declaration.** Later fixes moved other gates (real
 ceilings 4/10 → 8/10 held-out; repeatability pairs comparable 7/12 → 11/12) but left
